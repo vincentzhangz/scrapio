@@ -5,6 +5,8 @@
 use std::fs::File;
 use std::io::Write;
 
+use thiserror::Error;
+
 use crate::spider::Item;
 
 /// Pipeline trait for processing scraped items
@@ -24,30 +26,16 @@ pub trait Pipeline: Send + Sync {
 }
 
 /// Pipeline errors
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum PipelineError {
-    Io(std::io::Error),
-    Json(serde_json::Error),
-    Csv(csv::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+    #[error("CSV error: {0}")]
+    Csv(#[from] csv::Error),
+    #[error("{0}")]
     Custom(String),
-}
-
-impl From<std::io::Error> for PipelineError {
-    fn from(e: std::io::Error) -> Self {
-        PipelineError::Io(e)
-    }
-}
-
-impl From<serde_json::Error> for PipelineError {
-    fn from(e: serde_json::Error) -> Self {
-        PipelineError::Json(e)
-    }
-}
-
-impl From<csv::Error> for PipelineError {
-    fn from(e: csv::Error) -> Self {
-        PipelineError::Csv(e)
-    }
 }
 
 /// JSON Pipeline - exports items to JSON Lines format
@@ -67,15 +55,13 @@ impl JsonPipeline {
 
 impl Pipeline for JsonPipeline {
     fn open_spider(&self) -> Result<(), PipelineError> {
-        let mut file = File::create(&self.path)?;
-        file.write_all(b"")?; // Create empty file
-        let mut guard = self.file.lock().unwrap();
+        let mut guard = self.file.lock().expect("pipeline mutex poisoned");
         *guard = Some(File::create(&self.path)?);
         Ok(())
     }
 
     fn process_item(&self, item: Item) -> Result<Item, PipelineError> {
-        let mut guard = self.file.lock().unwrap();
+        let mut guard = self.file.lock().expect("pipeline mutex poisoned");
         if let Some(ref mut file) = *guard {
             let json = serde_json::to_string(&item)?;
             writeln!(file, "{}", json)?;
@@ -84,7 +70,7 @@ impl Pipeline for JsonPipeline {
     }
 
     fn close_spider(&self) -> Result<(), PipelineError> {
-        let mut guard = self.file.lock().unwrap();
+        let mut guard = self.file.lock().expect("pipeline mutex poisoned");
         *guard = None;
         Ok(())
     }
@@ -110,23 +96,27 @@ impl CsvPipeline {
 impl Pipeline for CsvPipeline {
     fn open_spider(&self) -> Result<(), PipelineError> {
         let writer = csv::Writer::from_path(&self.path)?;
-        let mut guard = self.writer.lock().unwrap();
+        let mut guard = self.writer.lock().expect("pipeline mutex poisoned");
         *guard = Some(writer);
         Ok(())
     }
 
     fn process_item(&self, item: Item) -> Result<Item, PipelineError> {
-        let mut guard = self.writer.lock().unwrap();
+        let mut guard = self.writer.lock().expect("pipeline mutex poisoned");
         if let Some(ref mut writer) = *guard {
-            // Get headers from first item
-            let headers_written = *self.headers_written.lock().unwrap();
+            let headers_written = *self
+                .headers_written
+                .lock()
+                .expect("pipeline mutex poisoned");
             if !headers_written && !item.is_empty() {
                 let headers: Vec<&str> = item.keys().map(|k| k.as_str()).collect();
                 writer.write_record(&headers)?;
-                *self.headers_written.lock().unwrap() = true;
+                *self
+                    .headers_written
+                    .lock()
+                    .expect("pipeline mutex poisoned") = true;
             }
 
-            // Write record
             let record: Vec<String> = item
                 .values()
                 .map(|v| match v {
@@ -141,7 +131,7 @@ impl Pipeline for CsvPipeline {
     }
 
     fn close_spider(&self) -> Result<(), PipelineError> {
-        let mut guard = self.writer.lock().unwrap();
+        let mut guard = self.writer.lock().expect("pipeline mutex poisoned");
         if let Some(ref mut writer) = *guard {
             writer.flush()?;
         }
@@ -151,19 +141,8 @@ impl Pipeline for CsvPipeline {
 }
 
 /// Console Pipeline - prints items to console
+#[derive(Default)]
 pub struct ConsolePipeline;
-
-impl ConsolePipeline {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Default for ConsolePipeline {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl Pipeline for ConsolePipeline {
     fn process_item(&self, item: Item) -> Result<Item, PipelineError> {
@@ -173,15 +152,14 @@ impl Pipeline for ConsolePipeline {
 }
 
 /// Pipeline chain - runs multiple pipelines in sequence
+#[derive(Default)]
 pub struct PipelineChain {
     pipelines: Vec<Box<dyn Pipeline>>,
 }
 
 impl PipelineChain {
     pub fn new() -> Self {
-        Self {
-            pipelines: Vec::new(),
-        }
+        Self::default()
     }
 
     pub fn push<P: Pipeline + 'static>(mut self, pipeline: P) -> Self {
@@ -209,11 +187,5 @@ impl PipelineChain {
             pipeline.close_spider()?;
         }
         Ok(())
-    }
-}
-
-impl Default for PipelineChain {
-    fn default() -> Self {
-        Self::new()
     }
 }

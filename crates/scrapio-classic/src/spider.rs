@@ -128,8 +128,6 @@ impl SpiderRunner {
                 .drain(..self.concurrent_requests.min(pending_requests.len()))
                 .collect();
 
-            let new_requests = Vec::new();
-
             for (url, depth) in batch {
                 if seen_urls.contains(&url) || depth > self.max_depth {
                     continue;
@@ -144,26 +142,27 @@ impl SpiderRunner {
                     Ok(response) => {
                         let output = spider.parse(&response);
 
+                        let enqueue =
+                            |reqs: Vec<Request>,
+                             seen: &std::collections::HashSet<String>,
+                             pending: &mut Vec<(String, usize)>| {
+                                for req in reqs {
+                                    if !seen.contains(&req.url) {
+                                        pending.push((req.url, depth + 1));
+                                    }
+                                }
+                            };
+
                         match output {
                             SpiderOutput::Items(items) => {
                                 all_items.extend(items);
                             }
                             SpiderOutput::Requests(reqs) => {
-                                for req in reqs {
-                                    if seen_urls.contains(&req.url) {
-                                        continue;
-                                    }
-                                    pending_requests.push((req.url, depth + 1));
-                                }
+                                enqueue(reqs, &seen_urls, &mut pending_requests);
                             }
                             SpiderOutput::Both(items, reqs) => {
                                 all_items.extend(items);
-                                for req in reqs {
-                                    if seen_urls.contains(&req.url) {
-                                        continue;
-                                    }
-                                    pending_requests.push((req.url, depth + 1));
-                                }
+                                enqueue(reqs, &seen_urls, &mut pending_requests);
                             }
                             SpiderOutput::None => {}
                         }
@@ -173,9 +172,6 @@ impl SpiderRunner {
                     }
                 }
             }
-
-            // Add any remaining requests from this batch
-            pending_requests.extend(new_requests);
         }
 
         all_items

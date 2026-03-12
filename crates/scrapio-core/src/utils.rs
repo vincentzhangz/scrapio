@@ -1,12 +1,15 @@
 //! Utility functions for Scrapio
 
 pub mod url {
+    use std::sync::LazyLock;
+
     use regex::Regex;
+
+    static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^https?://[^\s]+$").unwrap());
 
     /// Check if a URL is valid (http or https only)
     pub fn is_valid(url: &str) -> bool {
-        let url_regex = Regex::new(r"^https?://[^\s]+$").unwrap();
-        url_regex.is_match(url)
+        URL_REGEX.is_match(url)
     }
 
     /// Extract domain from a URL

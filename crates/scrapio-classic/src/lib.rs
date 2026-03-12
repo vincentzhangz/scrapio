@@ -30,7 +30,7 @@ impl Scraper {
         Ok(Response {
             url: url.to_string(),
             status,
-            html: html.clone(),
+            html,
             document,
         })
     }

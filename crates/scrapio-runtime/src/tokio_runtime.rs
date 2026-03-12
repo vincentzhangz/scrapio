@@ -12,11 +12,7 @@ pub struct TokioRuntime {
 
 impl TokioRuntime {
     pub fn current() -> Self {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create runtime");
-        Self { runtime }
+        Self::default()
     }
 
     pub fn new(runtime: tokio::runtime::Runtime) -> Self {

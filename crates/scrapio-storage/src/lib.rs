@@ -120,18 +120,7 @@ impl Storage {
         .await
         .map_err(|e| ScrapioError::Storage(e.to_string()))?;
 
-        match row {
-            Some(row) => Ok(Some(CrawlResult {
-                id: row.get("id"),
-                url: row.get("url"),
-                status: row.get("status"),
-                title: row.get("title"),
-                content: row.get("content"),
-                links: serde_json::from_str(&row.get::<String, _>("links")).unwrap_or_default(),
-                crawled_at: row.get("crawled_at"),
-            })),
-            None => Ok(None),
-        }
+        Ok(row.map(|r| row_to_crawl_result(&r)))
     }
 
     /// Get crawl result by ID
@@ -144,18 +133,7 @@ impl Storage {
         .await
         .map_err(|e| ScrapioError::Storage(e.to_string()))?;
 
-        match row {
-            Some(row) => Ok(Some(CrawlResult {
-                id: row.get("id"),
-                url: row.get("url"),
-                status: row.get("status"),
-                title: row.get("title"),
-                content: row.get("content"),
-                links: serde_json::from_str(&row.get::<String, _>("links")).unwrap_or_default(),
-                crawled_at: row.get("crawled_at"),
-            })),
-            None => Ok(None),
-        }
+        Ok(row.map(|r| row_to_crawl_result(&r)))
     }
 
     /// Get all crawl results
@@ -168,20 +146,7 @@ impl Storage {
         .await
         .map_err(|e| ScrapioError::Storage(e.to_string()))?;
 
-        let results = rows
-            .into_iter()
-            .map(|row| CrawlResult {
-                id: row.get("id"),
-                url: row.get("url"),
-                status: row.get("status"),
-                title: row.get("title"),
-                content: row.get("content"),
-                links: serde_json::from_str(&row.get::<String, _>("links")).unwrap_or_default(),
-                crawled_at: row.get("crawled_at"),
-            })
-            .collect();
-
-        Ok(results)
+        Ok(rows.iter().map(row_to_crawl_result).collect())
     }
 
     /// Record a crawl start
@@ -217,6 +182,18 @@ impl Storage {
         .map_err(|e| ScrapioError::Storage(e.to_string()))?;
 
         Ok(())
+    }
+}
+
+fn row_to_crawl_result(row: &sqlx::sqlite::SqliteRow) -> CrawlResult {
+    CrawlResult {
+        id: row.get("id"),
+        url: row.get("url"),
+        status: row.get("status"),
+        title: row.get("title"),
+        content: row.get("content"),
+        links: serde_json::from_str(&row.get::<String, _>("links")).unwrap_or_default(),
+        crawled_at: row.get("crawled_at"),
     }
 }
 
