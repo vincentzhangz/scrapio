@@ -1,0 +1,17 @@
+[package]
+name = "scrapio-runtime"
+version = "0.1.0"
+edition = "2024"
+description = "Runtime abstraction for Scrapio"
+license = "MIT"
+
+[features]
+default = ["tokio"]
+tokio = ["dep:tokio"]
+
+[dependencies]
+tokio = { version = "1", features = ["full"], optional = true }
+thiserror = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util", "macros"] }

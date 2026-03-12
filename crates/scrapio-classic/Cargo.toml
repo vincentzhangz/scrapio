@@ -1,0 +1,17 @@
+[package]
+name = "scrapio-classic"
+version = "0.1.0"
+edition = "2024"
+description = "Classic rule-based scraping for Scrapio"
+license = "MIT"
+
+[dependencies]
+scrapio-core = { path = "../scrapio-core" }
+reqwest = "0.12"
+scraper = "0.21"
+tokio = { version = "1", features = ["time"] }
+serde_json = "1"
+csv = "1"
+
+[dev-dependencies]
+tokio = "1"

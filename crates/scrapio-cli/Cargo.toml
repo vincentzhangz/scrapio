@@ -1,0 +1,29 @@
+[package]
+name = "scrapio-cli"
+version = "0.1.0"
+edition = "2024"
+description = "CLI tool for Scrapio"
+license = "MIT"
+
+[[bin]]
+name = "scrapio"
+path = "src/main.rs"
+
+[dependencies]
+scrapio-core = { path = "../scrapio-core" }
+scrapio-classic = { path = "../scrapio-classic" }
+scrapio-ai = { path = "../scrapio-ai" }
+scrapio-runtime = { path = "../scrapio-runtime" }
+scrapio-storage = { path = "../scrapio-storage" }
+clap = { version = "4", features = ["derive", "env"] }
+tracing-subscriber = "0.3"
+tracing = "0.1"
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = "0.12"
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+serde = { version = "1", features = ["derive"] }
+
+[features]
+default = []
