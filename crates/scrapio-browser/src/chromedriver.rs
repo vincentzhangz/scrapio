@@ -90,24 +90,17 @@ impl Arch {
     }
 }
 
-/// ChromeDriver download information
+/// ChromeDriver version response (new API format)
 #[derive(Debug, Clone, Deserialize)]
 pub struct LastKnownGoodVersions {
-    pub versions: Vec<VersionInfo>,
+    pub channels: std::collections::HashMap<String, ChannelInfo>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct VersionInfo {
-    #[serde(rename = "chromedriver_version")]
-    pub chromedriver_version: String,
-    #[serde(rename = "chromedriver")]
-    pub chromedriver: ChromeDriverDownloadInfo,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct ChromeDriverDownloadInfo {
-    pub platform: String,
-    pub url: String,
+pub struct ChannelInfo {
+    pub channel: String,
+    pub version: String,
+    pub revision: String,
 }
 
 /// ChromeDriver manager for automatic download and management
@@ -171,10 +164,27 @@ impl ChromeDriverManager {
 
     /// Get the ChromeDriver path
     pub fn driver_path(&self) -> PathBuf {
+        let platform_dir = self.get_platform_dir();
+        let driver_dir = self.cache_dir.join(platform_dir);
         if self.os == Os::Windows {
-            self.cache_dir.join("chromedriver.exe")
+            driver_dir.join("chromedriver.exe")
         } else {
-            self.cache_dir.join("chromedriver")
+            driver_dir.join("chromedriver")
+        }
+    }
+
+    /// Get the platform directory name (same as used in download URL)
+    fn get_platform_dir(&self) -> String {
+        match self.os {
+            Os::Macos => {
+                if self.arch == Arch::Arm64 {
+                    "chromedriver-mac-arm64".to_string()
+                } else {
+                    "chromedriver-mac-x64".to_string()
+                }
+            }
+            Os::Windows => "chromedriver-win32".to_string(),
+            Os::Linux => "chromedriver-linux64".to_string(),
         }
     }
 
@@ -184,7 +194,7 @@ impl ChromeDriverManager {
     }
 
     /// Fetch version info from the JSON API
-    async fn fetch_version_info(&self) -> Result<VersionInfo, ChromeDriverError> {
+    async fn fetch_version_info(&self) -> Result<ChannelInfo, ChromeDriverError> {
         let url =
             "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions.json";
 
@@ -203,32 +213,47 @@ impl ChromeDriverManager {
             .await
             .map_err(|e| ChromeDriverError::Network(e.to_string()))?;
 
+        // Get the channel name (capitalized)
+        let channel_name = match self.channel {
+            ChromeDriverChannel::Stable => "Stable",
+            ChromeDriverChannel::Beta => "Beta",
+            ChromeDriverChannel::Dev => "Dev",
+            ChromeDriverChannel::Canary => "Canary",
+        };
+
         // Find matching channel
-        let channel_str = self.channel.as_str();
         versions
-            .versions
-            .iter()
-            .find(|v| {
-                v.chromedriver_version.contains(channel_str)
-                    || (channel_str == "stable"
-                        && !v.chromedriver_version.contains("beta")
-                        && !v.chromedriver_version.contains("dev")
-                        && !v.chromedriver_version.contains("canary"))
-            })
+            .channels
+            .get(channel_name)
             .cloned()
-            .ok_or_else(|| ChromeDriverError::VersionNotFound(channel_str.to_string()))
+            .ok_or_else(|| ChromeDriverError::VersionNotFound(channel_name.to_string()))
     }
 
     /// Fetch the ChromeDriver version from the API
     pub async fn fetch_version(&mut self) -> Result<String, ChromeDriverError> {
         let info = self.fetch_version_info().await?;
-        self.version = Some(info.chromedriver_version.clone());
-        Ok(info.chromedriver_version)
+        self.version = Some(info.version.clone());
+        Ok(info.version)
     }
 
     /// Get the download URL
     pub fn get_download_url(&self, version: &str) -> String {
-        let platform = format!("{}-{}", self.os.as_str(), self.arch.as_str());
+        // Chrome for Testing uses specific platform names:
+        // - win32 (Windows)
+        // - mac-x64 (macOS Intel)
+        // - mac-arm64 (macOS Apple Silicon)
+        // - linux64 (Linux)
+        let platform = match self.os {
+            Os::Macos => {
+                if self.arch == Arch::Arm64 {
+                    "mac-arm64".to_string()
+                } else {
+                    "mac-x64".to_string()
+                }
+            }
+            Os::Windows => "win32".to_string(),
+            Os::Linux => "linux64".to_string(),
+        };
         format!(
             "https://storage.googleapis.com/chrome-for-testing-public/{}/{}/chromedriver-{}.zip",
             version, platform, platform
@@ -249,9 +274,9 @@ impl ChromeDriverManager {
             (ver.clone(), url)
         } else {
             // Fetch version info from API
-            let version_info = self.fetch_version_info().await?;
-            let version = version_info.chromedriver_version.clone();
-            let url = version_info.chromedriver.url.clone();
+            let channel_info = self.fetch_version_info().await?;
+            let version = channel_info.version.clone();
+            let url = self.get_download_url(&version);
             (version, url)
         };
 
