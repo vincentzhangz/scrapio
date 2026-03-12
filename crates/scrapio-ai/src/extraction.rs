@@ -7,8 +7,7 @@ use scraper::{Html, Selector};
 
 use crate::AiExtractionResult;
 
-static LINK_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"https?://[^\s]+").unwrap());
+static LINK_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?://[^\s]+").unwrap());
 
 /// Strip HTML tags to plain text, preferring main content containers
 pub fn strip_html(html: &str) -> String {

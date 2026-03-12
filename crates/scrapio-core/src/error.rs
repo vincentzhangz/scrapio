@@ -24,6 +24,9 @@ pub enum ScrapioError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Browser error: {0}")]
+    Browser(String),
 }
 
 pub type ScrapioResult<T> = Result<T, ScrapioError>;

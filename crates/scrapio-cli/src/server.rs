@@ -131,7 +131,8 @@ async fn scrape(
         let _ = storage
             .save_result(&url, status, title.as_deref(), &html, &links)
             .await;
-        let json = serde_json::json!({"url": url, "status": status, "title": title, "links": links});
+        let json =
+            serde_json::json!({"url": url, "status": status, "title": title, "links": links});
         (axum::http::StatusCode::OK, AxumJson(json))
     }
 }
@@ -153,7 +154,9 @@ pub async fn serve_api_server(host: String, port: u16) {
     let addr = format!("{}:{}", host, port);
     println!("Starting API server on {}", addr);
     println!("Endpoints:");
-    println!("  POST /scrape        - Scrape a URL (JSON: {{\"url\": \"...\", \"ai\": true/false}})");
+    println!(
+        "  POST /scrape        - Scrape a URL (JSON: {{\"url\": \"...\", \"ai\": true/false}})"
+    );
     println!("  GET  /results       - List saved results");
     println!("  GET  /results/{{id}} - Get specific result");
     println!("\nServer running at http://{}", addr);

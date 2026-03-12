@@ -13,7 +13,7 @@ url = "2"
 regex = "1"
 tracing = "0.1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "cookies", "rustls-tls"] }
+reqwest = { version = "0.13", features = ["json", "cookies", "rustls"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros"] }

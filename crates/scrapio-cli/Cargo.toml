@@ -15,12 +15,13 @@ scrapio-classic = { path = "../scrapio-classic" }
 scrapio-ai = { path = "../scrapio-ai" }
 scrapio-runtime = { path = "../scrapio-runtime" }
 scrapio-storage = { path = "../scrapio-storage" }
+scrapio-browser = { path = "../scrapio-browser" }
 clap = { version = "4", features = ["derive", "env"] }
 tracing-subscriber = "0.3"
 tracing = "0.1"
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = "0.12"
+reqwest = { version = "0.13", features = ["json"] }
 axum = { version = "0.8", features = ["macros"] }
 tower = "0.5"
 serde = { version = "1", features = ["derive"] }

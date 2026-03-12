@@ -8,6 +8,8 @@ publish = false
 scrapio-classic = { path = "../crates/scrapio-classic" }
 scrapio-ai = { path = "../crates/scrapio-ai" }
 scrapio-runtime = { path = "../crates/scrapio-runtime" }
+scrapio-browser = { path = "../crates/scrapio-browser" }
+scrapio-core = { path = "../crates/scrapio-core" }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 
@@ -22,3 +24,11 @@ path = "ai.rs"
 [[bin]]
 name = "spider"
 path = "spider.rs"
+
+[[bin]]
+name = "browser"
+path = "browser.rs"
+
+[[bin]]
+name = "browser_complex"
+path = "browser_complex.rs"

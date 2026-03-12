@@ -1,6 +1,7 @@
 //! CLI command handlers
 
 use scrapio_ai::AiScraper;
+use scrapio_browser::{StealthBrowser, StealthConfig, StealthLevel};
 use scrapio_classic::Scraper;
 use scrapio_runtime::Runtime;
 use scrapio_storage::Storage;
@@ -129,5 +130,91 @@ pub fn handle_list(database: &str, limit: usize) {
             },
             Err(e) => eprintln!("Database error: {}", e),
         }
+    });
+}
+
+pub fn handle_browser(url: &str, headless: bool, stealth: Option<&str>, script: Option<&str>) {
+    run_async(async {
+        // Determine stealth level
+        let stealth_level = match stealth {
+            Some("basic") => StealthLevel::Basic,
+            Some("advanced") => StealthLevel::Advanced,
+            Some("full") | Some(_) => StealthLevel::Full,
+            None => StealthLevel::None,
+        };
+
+        // Build browser config
+        let mut builder = StealthBrowser::new().headless(headless);
+
+        if stealth_level != StealthLevel::None {
+            let config = StealthConfig::new(stealth_level);
+            builder = builder.stealth(config);
+        }
+
+        // Execute custom script if provided
+        let custom_script = script.and_then(|s| std::fs::read_to_string(s).ok());
+
+        let mut browser = match builder.init().await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("Failed to initialize browser: {}", e);
+                return;
+            }
+        };
+
+        // Navigate to URL
+        match browser.goto(url).await {
+            Ok(_) => {
+                println!("Successfully navigated to: {}", url);
+            }
+            Err(e) => {
+                eprintln!("Failed to navigate: {}", e);
+                let _ = browser.close().await;
+                return;
+            }
+        }
+
+        // Execute custom script if provided
+        if let Some(ref script_content) = custom_script {
+            match browser.execute_script(script_content).await {
+                Ok(result) => {
+                    println!("Script result: {}", result);
+                }
+                Err(e) => {
+                    eprintln!("Script execution failed: {}", e);
+                }
+            }
+        }
+
+        // Get page info
+        match browser.title().await {
+            Ok(title) => println!("Page title: {}", title),
+            Err(e) => eprintln!("Failed to get title: {}", e),
+        }
+
+        match browser.url().await {
+            Ok(current_url) => println!("Current URL: {}", current_url),
+            Err(e) => eprintln!("Failed to get URL: {}", e),
+        }
+
+        // Get page source
+        match browser.html().await {
+            Ok(html) => {
+                let preview = if html.len() > 500 {
+                    format!("{}...", &html[..500])
+                } else {
+                    html
+                };
+                println!("Page HTML preview:\n{}", preview);
+            }
+            Err(e) => eprintln!("Failed to get HTML: {}", e),
+        }
+
+        // Close browser
+        if let Err(e) = browser.close().await {
+            eprintln!("Warning: Failed to close browser cleanly: {}", e);
+        }
+
+        println!("Browser session complete.");
     });
 }

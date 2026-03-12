@@ -8,6 +8,7 @@ members = [
     "crates/scrapio-ai",
     "crates/scrapio-cli",
     "crates/scrapio-storage",
+    "crates/scrapio-browser",
     "examples",
 ]
 resolver = "2"

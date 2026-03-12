@@ -129,7 +129,10 @@ pub async fn call_ollama(
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(ScrapioError::Ai(format!("Ollama error {}: {}", status, text)));
+        return Err(ScrapioError::Ai(format!(
+            "Ollama error {}: {}",
+            status, text
+        )));
     }
 
     let value: serde_json::Value = response

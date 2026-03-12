@@ -51,6 +51,15 @@ enum Commands {
         #[arg(long, default_value = "8080")]
         port: u16,
     },
+    Browser {
+        url: String,
+        #[arg(long, default_value = "true")]
+        headless: bool,
+        #[arg(long)]
+        stealth: Option<String>,
+        #[arg(long)]
+        script: Option<String>,
+    },
     Version,
 }
 
@@ -59,7 +68,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Classic { url } => commands::handle_classic(&url),
-        Commands::Ai { url, schema, provider, model } => {
+        Commands::Ai {
+            url,
+            schema,
+            provider,
+            model,
+        } => {
             commands::handle_ai(&url, schema, &provider, &model);
         }
         Commands::Crawl { url, depth } => commands::handle_crawl(&url, depth),
@@ -71,13 +85,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 server::serve_api_server(host, port).await;
             });
         }
+        Commands::Browser {
+            url,
+            headless,
+            stealth,
+            script,
+        } => {
+            commands::handle_browser(&url, headless, stealth.as_deref(), script.as_deref());
+        }
         Commands::Version => {
             println!("scrapio v{}", env!("CARGO_PKG_VERSION"));
             println!("Runtime: Tokio");
-            println!("Features: classic, ai, storage");
+            println!("Features: classic, ai, storage, browser");
         }
     }
 
     Ok(())
 }
-

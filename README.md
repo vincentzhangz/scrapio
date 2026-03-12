@@ -10,6 +10,7 @@ All-in-one web scraping toolkit with AI and non-AI capabilities.
 - **Item Pipelines** - Process and export scraped data (JSON, CSV)
 - **SQLite Storage** - Persist crawl results
 - **Multiple LLM Providers** - OpenAI, Anthropic, Ollama (local)
+- **Browser Automation** - Stealth browser for JavaScript-rendered content
 
 ## Installation
 
@@ -33,7 +34,7 @@ cargo run -- --help
 
 ```bash
 # Basic scraping
-scrapio classic https://example.com
+scrapio classic https://www.rust-lang.org
 
 # Output:
 # Status: 200
@@ -48,13 +49,13 @@ scrapio classic https://example.com
 export OPENAI_API_KEY=your-api-key
 
 # AI scraping (uses fallback if no key)
-scrapio ai https://example.com
+scrapio ai https://www.rust-lang.org
 
 # With custom schema
-scrapio ai https://example.com --schema '{"title": "string", "links": "array"}'
+scrapio ai https://www.rust-lang.org --schema '{"title": "string", "links": "array"}'
 
 # Use specific provider (openai, anthropic, ollama)
-scrapio ai https://example.com --provider ollama
+scrapio ai https://www.rust-lang.org --provider ollama
 ```
 
 ### Using AI with Ollama (Local Models)
@@ -77,7 +78,7 @@ ollama pull phi3
 ollama serve
 
 # 3. Use Scrapio with Ollama
-scrapio ai https://example.com --provider ollama
+scrapio ai https://www.rust-lang.org --provider ollama
 ```
 
 ### Selecting Models
@@ -86,20 +87,20 @@ You can specify which model to use with the `--model` flag:
 
 ```bash
 # OpenAI models
-scrapio ai https://example.com --provider openai --model gpt-4o
-scrapio ai https://example.com --provider openai --model gpt-4
-scrapio ai https://example.com --provider openai --model gpt-3.5-turbo
+scrapio ai https://www.rust-lang.org --provider openai --model gpt-4o
+scrapio ai https://www.rust-lang.org --provider openai --model gpt-4
+scrapio ai https://www.rust-lang.org --provider openai --model gpt-3.5-turbo
 
 # Anthropic models
-scrapio ai https://example.com --provider anthropic --model claude-sonnet-4-20250514
-scrapio ai https://example.com --provider anthropic --model claude-3-opus-20240229
-scrapio ai https://example.com --provider anthropic --model claude-3-haiku-20240307
+scrapio ai https://www.rust-lang.org --provider anthropic --model claude-sonnet-4-20250514
+scrapio ai https://www.rust-lang.org --provider anthropic --model claude-3-opus-20240229
+scrapio ai https://www.rust-lang.org --provider anthropic --model claude-3-haiku-20240307
 
 # Ollama models (must be installed locally)
-scrapio ai https://example.com --provider ollama --model llama3
-scrapio ai https://example.com --provider ollama --model mistral
-scrapio ai https://example.com --provider ollama --model phi3
-scrapio ai https://example.com --provider ollama --model codellama
+scrapio ai https://www.rust-lang.org --provider ollama --model llama3
+scrapio ai https://www.rust-lang.org --provider ollama --model mistral
+scrapio ai https://www.rust-lang.org --provider ollama --model phi3
+scrapio ai https://www.rust-lang.org --provider ollama --model codellama
 ```
 
 #### Environment Variables
@@ -119,17 +120,60 @@ export OLLAMA_BASE_URL=http://localhost:11434
 
 ```bash
 # Crawl a website with depth limit
-scrapio crawl https://example.com --depth 3
+scrapio crawl https://www.rust-lang.org --depth 3
 ```
 
 ### Save to Database
 
 ```bash
 # Save result to SQLite
-scrapio save https://example.com --database scrapio.db
+scrapio save https://www.rust-lang.org --database scrapio.db
 
 # List saved results
 scrapio list --database scrapio.db
+```
+
+### Browser Automation
+
+```bash
+# Basic browser automation (requires ChromeDriver)
+scrapio browser https://www.rust-lang.org --headless
+
+# With stealth mode
+scrapio browser https://www.rust-lang.org --stealth full
+
+# Run with visible browser
+scrapio browser https://www.rust-lang.org --headless=false
+
+# Execute custom JavaScript
+scrapio browser https://www.rust-lang.org --script myscript.js
+```
+
+**Stealth Levels:**
+- `basic` - Removes navigator.webdriver flag
+- `advanced` - Canvas fingerprint randomization, WebGL spoofing
+- `full` - Viewport randomization, timezone/locale settings
+
+**Note:** The browser example requires ChromeDriver to be installed:
+
+Download from [ChromeDriver Downloads](https://googlechromelabs.github.io/chrome-for-testing/#stable):
+
+```bash
+# macOS (manual)
+# 1. Download ChromeDriver from https://googlechromelabs.github.io/chrome-for-testing/#stable
+# 2. Extract and add to PATH or place in project directory
+
+# Linux (Ubuntu/Debian)
+sudo apt-get update
+sudo apt-get install chromium-chromedriver
+
+# Windows
+# Download and add to PATH
+```
+
+Start ChromeDriver before running:
+```bash
+chromedriver --port=9515
 ```
 
 ### Start API Server
@@ -186,7 +230,7 @@ fn main() {
     let runtime = TokioRuntime::default();
     runtime.block_on(async {
         let scraper = Scraper::new();
-        match scraper.scrape("https://example.com").await {
+        match scraper.scrape("https://www.rust-lang.org").await {
             Ok(response) => {
                 println!("Title: {}", response.title().unwrap_or_default());
                 println!("Links: {}", response.links().len());
@@ -223,7 +267,7 @@ fn main() {
             "links": "array"
         }"#;
 
-        match scraper.scrape("https://example.com", schema).await {
+        match scraper.scrape("https://www.rust-lang.org", schema).await {
             Ok(result) => {
                 println!("Model: {}", result.model);
                 println!("Data: {}", serde_json::to_string_pretty(&result.data).unwrap());
@@ -250,7 +294,7 @@ impl Spider for MySpider {
     }
 
     fn start_urls(&self) -> Vec<String> {
-        vec!["https://example.com".to_string()]
+        vec!["https://www.rust-lang.org".to_string()]
     }
 
     fn parse(&self, response: &scrapio_classic::Response) -> SpiderOutput {
@@ -261,7 +305,7 @@ impl Spider for MySpider {
         // Extract links to follow
         let requests: Vec<Request> = response.links()
             .iter()
-            .filter(|l| l.starts_with("https://example.com"))
+            .filter(|l| l.starts_with("https://www.rust-lang.org"))
             .map(|l| Request::get(l))
             .collect();
 
@@ -293,11 +337,11 @@ fn main() {
 
         // Save a result
         storage.save_result(
-            "https://example.com",
+            "https://www.rust-lang.org",
             200,
             Some("Example Domain"),
             "<html>...</html>",
-            &["https://example.com/link1".to_string()],
+            &["https://www.rust-lang.org/link1".to_string()],
         ).await.unwrap();
 
         // List results
@@ -321,6 +365,7 @@ Commands:
   save     Save result to database
   list     List saved results
   serve    Start API server
+  browser  Browser automation with stealth mode
   version  Show version info
 ```
 
@@ -382,6 +427,34 @@ Options:
   --port <PORT>  Port to bind (default: 8080)
 ```
 
+### Browser Command
+
+```
+scrapio browser <URL> [OPTIONS]
+
+Options:
+  --headless         Run in headless mode (default: true)
+  --stealth <LEVEL>  Stealth level: basic, advanced, full
+  --script <PATH>    JavaScript file to execute
+```
+
+### User Agent Management
+
+Scrapio provides a `UserAgentManager` for configuring browser user agents:
+
+```rust
+use scrapio_core::{UserAgentManager, Browser, profiles};
+
+let ua = UserAgentManager::new()
+    .with_browser(Browser::Chrome)
+    .with_version("122.0.0.0");
+
+// Or use predefined profiles
+let ua = profiles::chrome_desktop();
+let iphone_ua = profiles::iphone();
+let android_ua = profiles::android();
+```
+
 ## Environment Variables
 
 - `OPENAI_API_KEY` - OpenAI API key for AI scraping
@@ -392,11 +465,12 @@ Options:
 ```
 scrapio/
 ├── crates/
-│   ├── scrapio-core/       # Core types, error handling, HTTP
+│   ├── scrapio-core/       # Core types, error handling, HTTP, UserAgent
 │   ├── scrapio-runtime/    # Runtime abstraction (tokio)
 │   ├── scrapio-classic/    # Classic scraping, Spider, Pipeline
 │   ├── scrapio-ai/         # AI-powered scraping
 │   ├── scrapio-storage/    # SQLite storage
+│   ├── scrapio-browser/    # Browser automation with stealth
 │   └── scrapio-cli/        # CLI binary
 ├── examples/               # Example programs
 └── Cargo.toml
@@ -408,6 +482,7 @@ See the [examples](examples/README.md) directory for usage examples:
 - `classic` - CSS selector scraping
 - `ai` - AI-powered scraping with Ollama
 - `spider` - Custom spider implementation
+- `browser` - Browser automation with stealth mode
 
 ## License
 

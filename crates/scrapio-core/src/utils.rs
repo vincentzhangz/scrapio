@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn test_url_validation() {
-        assert!(url::is_valid("https://example.com"));
+        assert!(url::is_valid("https://www.rust-lang.org"));
         assert!(url::is_valid("http://example.com"));
         assert!(!url::is_valid("ftp://example.com"));
         assert!(!url::is_valid("not a url"));
@@ -35,7 +35,7 @@ mod tests {
     #[test]
     fn test_domain_extraction() {
         assert_eq!(
-            url::get_domain("https://example.com/page"),
+            url::get_domain("https://www.rust-lang.org/page"),
             Some("example.com".to_string())
         );
         assert_eq!(
