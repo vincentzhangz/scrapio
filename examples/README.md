@@ -34,26 +34,7 @@ AI-powered scraping with Ollama (local LLM).
 Custom spider implementation for crawling websites.
 
 ### browser
-Browser automation with stealth mode using WebDriver.
+Browser automation with stealth mode using WebDriver. Uses ChromeDriverManager to automatically download and manage ChromeDriver.
 
-**Note:** The browser example requires ChromeDriver to be installed:
-
-Download from [ChromeDriver Downloads](https://googlechromelabs.github.io/chrome-for-testing/#stable):
-
-```bash
-# macOS (manual)
-# 1. Download ChromeDriver from https://googlechromelabs.github.io/chrome-for-testing/#stable
-# 2. Extract and add to PATH or place in project directory
-
-# Linux (Ubuntu/Debian)
-sudo apt-get update
-sudo apt-get install chromium-chromedriver
-
-# Windows
-# Download and add to PATH
-```
-
-Start ChromeDriver before running:
-```bash
-chromedriver --port=9515
-```
+### browser_complex
+More advanced browser automation example demonstrating click, scroll, and screenshot interactions.

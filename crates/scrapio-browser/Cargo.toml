@@ -6,14 +6,17 @@ description = "Stealth browser automation for Scrapio"
 license = "MIT"
 
 [dependencies]
-scrapio-core = { path = "../scrapio-core" }
+dirs = "6"
 fantoccini = "0.22"
-tokio = { version = "1", features = ["full"] }
-thiserror = "2"
+futures = "0.3"
+reqwest = { version = "0.13", features = ["json"] }
+scrapio-core = { path = "../scrapio-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
-futures = "0.3"
+zip = "8"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros"] }

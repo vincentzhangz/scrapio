@@ -142,26 +142,22 @@ pub mod profiles {
 
     /// Standard desktop Chrome user agent
     pub fn chrome_desktop() -> UserAgentManager {
-        UserAgentManager::new()
-            .with_browser(Browser::Chrome)
+        UserAgentManager::new().with_browser(Browser::Chrome)
     }
 
     /// Standard desktop Firefox user agent
     pub fn firefox_desktop() -> UserAgentManager {
-        UserAgentManager::new()
-            .with_browser(Browser::Firefox)
+        UserAgentManager::new().with_browser(Browser::Firefox)
     }
 
     /// Standard desktop Safari user agent
     pub fn safari_desktop() -> UserAgentManager {
-        UserAgentManager::new()
-            .with_browser(Browser::Safari)
+        UserAgentManager::new().with_browser(Browser::Safari)
     }
 
     /// Standard desktop Edge user agent
     pub fn edge_desktop() -> UserAgentManager {
-        UserAgentManager::new()
-            .with_browser(Browser::Edge)
+        UserAgentManager::new().with_browser(Browser::Edge)
     }
 
     /// iPhone Safari user agent
@@ -200,8 +196,7 @@ mod tests {
 
     #[test]
     fn test_custom_ua() {
-        let manager = UserAgentManager::new()
-            .with_custom("Custom UA/1.0");
+        let manager = UserAgentManager::new().with_custom("Custom UA/1.0");
         assert_eq!(manager.get_user_agent(), "Custom UA/1.0");
     }
 

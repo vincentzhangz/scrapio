@@ -507,11 +507,8 @@ impl StealthBrowser {
     /// # Errors
     /// Returns an error if scroll fails
     pub async fn scroll(&self, pixels: i32) -> Result<(), ScrapioError> {
-        self.execute_script(&format!(
-            "window.scrollBy(0, {});",
-            pixels
-        ))
-        .await?;
+        self.execute_script(&format!("window.scrollBy(0, {});", pixels))
+            .await?;
         Ok(())
     }
 
@@ -545,7 +542,8 @@ impl StealthBrowser {
     /// # Errors
     /// Returns an error if scroll fails
     pub async fn scroll_to_bottom(&self) -> Result<(), ScrapioError> {
-        self.execute_script("window.scrollTo(0, document.body.scrollHeight);").await?;
+        self.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            .await?;
         Ok(())
     }
 }

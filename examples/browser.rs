@@ -1,7 +1,7 @@
-//! Browser automation example with stealth mode
+//! Browser automation example with stealth mode and automatic ChromeDriver management
 
-use scrapio_browser::{StealthBrowser, StealthLevel};
-use scrapio_core::{UserAgentManager, profiles};
+use scrapio_browser::{ChromeDriverManager, StealthBrowser, StealthLevel};
+use scrapio_core::{profiles, UserAgentManager};
 use scrapio_runtime::{Runtime, TokioRuntime};
 
 fn main() {
@@ -9,14 +9,34 @@ fn main() {
     runtime.block_on(async {
         println!("Starting browser automation example...\n");
 
-        // Create browser with full stealth
+        // Step 1: Download and start ChromeDriver automatically
+        println!("=== Step 1: Setup ChromeDriver ===");
+        let mut driver_manager = ChromeDriverManager::new();
+
+        // Optional: Set specific version (or leave empty for latest stable)
+        // driver_manager = driver_manager.with_version("146.0.7680.72");
+
+        match driver_manager.download_and_start(9515).await {
+            Ok(_child) => {
+                println!("ChromeDriver started successfully on port 9515");
+                // Give ChromeDriver time to start
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            Err(e) => {
+                eprintln!("Failed to start ChromeDriver: {}", e);
+                return;
+            }
+        }
+
+        // Step 2: Create browser with full stealth
+        println!("\n=== Step 2: Create Browser ===");
         let mut browser = StealthBrowser::new()
             .headless(true)
             .stealth_level(StealthLevel::Full);
 
-        // Navigate to example.com
+        // Navigate to rust-lang.org
         match browser.goto("https://www.rust-lang.org").await {
-            Ok(_) => println!("Successfully navigated to example.com"),
+            Ok(_) => println!("Successfully navigated to rust-lang.org"),
             Err(e) => {
                 eprintln!("Failed to navigate: {}", e);
                 return;
@@ -48,11 +68,9 @@ fn main() {
             Err(e) => eprintln!("Failed to get HTML: {}", e),
         }
 
-        // Example: Find elements
+        // Find elements
         match browser.find_element("h1").await {
-            Ok(_elem) => {
-                println!("Found H1 element");
-            }
+            Ok(_elem) => println!("Found H1 element"),
             Err(e) => println!("No H1 element found: {}", e),
         }
 

@@ -4,15 +4,6 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
-[dependencies]
-scrapio-classic = { path = "../crates/scrapio-classic" }
-scrapio-ai = { path = "../crates/scrapio-ai" }
-scrapio-runtime = { path = "../crates/scrapio-runtime" }
-scrapio-browser = { path = "../crates/scrapio-browser" }
-scrapio-core = { path = "../crates/scrapio-core" }
-serde_json = "1"
-tokio = { version = "1", features = ["full"] }
-
 [[bin]]
 name = "classic"
 path = "classic.rs"
@@ -32,3 +23,12 @@ path = "browser.rs"
 [[bin]]
 name = "browser_complex"
 path = "browser_complex.rs"
+
+[dependencies]
+scrapio-ai = { path = "../crates/scrapio-ai" }
+scrapio-browser = { path = "../crates/scrapio-browser" }
+scrapio-classic = { path = "../crates/scrapio-classic" }
+scrapio-core = { path = "../crates/scrapio-core" }
+scrapio-runtime = { path = "../crates/scrapio-runtime" }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }

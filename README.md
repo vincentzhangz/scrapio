@@ -154,26 +154,31 @@ scrapio browser https://www.rust-lang.org --script myscript.js
 - `advanced` - Canvas fingerprint randomization, WebGL spoofing
 - `full` - Viewport randomization, timezone/locale settings
 
-**Note:** The browser example requires ChromeDriver to be installed:
+**Note:** ChromeDriver is automatically downloaded and managed by the `ChromeDriverManager`. The browser command will automatically download the correct ChromeDriver version for your Chrome browser.
 
-Download from [ChromeDriver Downloads](https://googlechromelabs.github.io/chrome-for-testing/#stable):
+For programmatic usage, you can also use ChromeDriverManager directly:
 
-```bash
-# macOS (manual)
-# 1. Download ChromeDriver from https://googlechromelabs.github.io/chrome-for-testing/#stable
-# 2. Extract and add to PATH or place in project directory
+```rust
+use scrapio_browser::{ChromeDriverManager, ChromeDriverChannel};
+use scrapio_runtime::{Runtime, TokioRuntime};
 
-# Linux (Ubuntu/Debian)
-sudo apt-get update
-sudo apt-get install chromium-chromedriver
+fn main() {
+    let runtime = TokioRuntime::default();
+    runtime.block_on(async {
+        let mut manager = ChromeDriverManager::new()
+            .with_channel(ChromeDriverChannel::Stable);
 
-# Windows
-# Download and add to PATH
-```
+        // Or specify a version manually
+        // let mut manager = ChromeDriverManager::new()
+        //     .with_version("146.0.7680.72");
 
-Start ChromeDriver before running:
-```bash
-chromedriver --port=9515
+        // Download and start ChromeDriver automatically
+        match manager.download_and_start(9515).await {
+            Ok(_child) => println!("ChromeDriver started on port 9515"),
+            Err(e) => eprintln!("Failed: {}", e),
+        }
+    });
+}
 ```
 
 ### Start API Server

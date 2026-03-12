@@ -9,22 +9,22 @@ license = "MIT"
 name = "scrapio"
 path = "src/main.rs"
 
-[dependencies]
-scrapio-core = { path = "../scrapio-core" }
-scrapio-classic = { path = "../scrapio-classic" }
-scrapio-ai = { path = "../scrapio-ai" }
-scrapio-runtime = { path = "../scrapio-runtime" }
-scrapio-storage = { path = "../scrapio-storage" }
-scrapio-browser = { path = "../scrapio-browser" }
-clap = { version = "4", features = ["derive", "env"] }
-tracing-subscriber = "0.3"
-tracing = "0.1"
-serde_json = "1"
-tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.13", features = ["json"] }
-axum = { version = "0.8", features = ["macros"] }
-tower = "0.5"
-serde = { version = "1", features = ["derive"] }
-
 [features]
 default = []
+
+[dependencies]
+axum = { version = "0.8", features = ["macros"] }
+clap = { version = "4", features = ["derive", "env"] }
+reqwest = { version = "0.13", features = ["json"] }
+scrapio-ai = { path = "../scrapio-ai" }
+scrapio-browser = { path = "../scrapio-browser" }
+scrapio-classic = { path = "../scrapio-classic" }
+scrapio-core = { path = "../scrapio-core" }
+scrapio-runtime = { path = "../scrapio-runtime" }
+scrapio-storage = { path = "../scrapio-storage" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tracing = "0.1"
+tracing-subscriber = "0.3"
