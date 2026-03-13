@@ -1,6 +1,7 @@
 //! CLI command handlers
 
 use scrapio_ai::AiScraper;
+use scrapio_ai::BrowserAiScraper;
 use scrapio_browser::{StealthBrowser, StealthConfig, StealthLevel};
 use scrapio_classic::Scraper;
 use scrapio_runtime::Runtime;
@@ -26,7 +27,15 @@ pub fn handle_classic(url: &str) {
     });
 }
 
-pub fn handle_ai(url: &str, schema: Option<String>, provider: &str, model: &str) {
+pub fn handle_ai(url: &str, schema: Option<String>, provider: &str, model: &str, use_browser: bool, prompt: &str) {
+    if use_browser {
+        handle_ai_browser(url, schema, provider, model, prompt);
+    } else {
+        handle_ai_http(url, schema, provider, model);
+    }
+}
+
+fn handle_ai_http(url: &str, schema: Option<String>, provider: &str, model: &str) {
     run_async(async {
         let mut config = scrapio_ai::AiConfig::new().with_provider(provider);
         if !model.is_empty() {
@@ -40,6 +49,66 @@ pub fn handle_ai(url: &str, schema: Option<String>, provider: &str, model: &str)
                 println!("Model: {}", result.model);
                 println!("Used fallback: {}", result.used_fallback);
                 println!("Links found: {}", result.links.len());
+                println!(
+                    "Data: {}",
+                    serde_json::to_string_pretty(&result.data).unwrap_or_default()
+                );
+            }
+            Err(e) => eprintln!("Error: {}", e),
+        }
+    });
+}
+
+fn handle_ai_browser(url: &str, schema: Option<String>, provider: &str, model: &str, prompt: &str) {
+    run_async(async {
+        // Kill any existing ChromeDriver on port 9515
+        scrapio_browser::ChromeDriverManager::kill_existing(9515);
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        // Auto-download and start ChromeDriver
+        println!("Setting up ChromeDriver...");
+        let mut driver_manager = scrapio_browser::ChromeDriverManager::new();
+
+        let child = match driver_manager.download_and_start(9515).await {
+            Ok(c) => {
+                println!("ChromeDriver started on port 9515");
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                c
+            }
+            Err(e) => {
+                eprintln!("Failed to start ChromeDriver: {}", e);
+                return;
+            }
+        };
+
+        // Use a scope to ensure ChromeDriver is stopped even on error
+        let result = async {
+            let mut config = scrapio_ai::AiConfig::new().with_provider(provider);
+            if !model.is_empty() {
+                config = config.with_model(model);
+            }
+
+            let scraper = BrowserAiScraper::with_config(config);
+            let schema = schema.unwrap_or_else(|| "{}".to_string());
+
+            println!("\nUsing browser automation for AI scraping...");
+            println!("URL: {}", url);
+            if !prompt.is_empty() {
+                println!("Prompt: {}", prompt);
+            }
+            println!("Schema: {}", schema);
+
+            scraper.scrape_with_prompt(url, &schema, prompt).await
+        }.await;
+
+        // Always stop ChromeDriver when done
+        scrapio_browser::ChromeDriverManager::stop(child);
+
+        match result {
+            Ok(result) => {
+                println!("\n--- Result ---");
+                println!("URL: {}", result.url);
+                println!("Model: {}", result.model);
                 println!(
                     "Data: {}",
                     serde_json::to_string_pretty(&result.data).unwrap_or_default()

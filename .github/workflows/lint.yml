@@ -1,0 +1,65 @@
+name: Rust Quality
+
+on:
+    pull_request:
+    push:
+        branches:
+            - main
+            - release/*
+
+permissions:
+    contents: read
+
+env:
+    CARGO_TERM_COLOR: always
+    RUST_BACKTRACE: "1"
+
+jobs:
+    fmt:
+        name: Format Check
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install stable Rust with rustfmt
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: rustfmt
+
+            - name: Check formatting
+              run: cargo fmt --all -- --check
+
+    clippy:
+        name: Clippy (all features, all targets)
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install stable Rust with clippy
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: clippy
+
+            - name: Cache Cargo artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Run clippy with warnings denied
+              run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+
+    test:
+        name: Test Suite
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install stable Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Cache Cargo artifacts
+              uses: Swatinem/rust-cache@v2
+
+            - name: Run tests
+              run: cargo test --all

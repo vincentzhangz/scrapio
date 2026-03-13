@@ -15,7 +15,13 @@ pub mod extraction;
 pub mod prompts;
 pub mod provider;
 
+#[cfg(feature = "browser")]
+pub mod browser_agent;
+
 pub use config::AiConfig;
+
+#[cfg(feature = "browser")]
+pub use browser_agent::{BrowserAction, BrowserAiScraper, ActionResult, AgentState};
 
 /// Result from AI extraction
 #[derive(Debug, Clone, Serialize, Deserialize)]

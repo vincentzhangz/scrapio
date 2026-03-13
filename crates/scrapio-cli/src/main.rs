@@ -28,6 +28,10 @@ enum Commands {
         provider: String,
         #[arg(long, default_value = "")]
         model: String,
+        #[arg(long)]
+        browser: bool,
+        #[arg(long, default_value = "")]
+        prompt: String,
     },
     Crawl {
         url: String,
@@ -73,8 +77,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             schema,
             provider,
             model,
+            browser,
+            prompt,
         } => {
-            commands::handle_ai(&url, schema, &provider, &model);
+            commands::handle_ai(&url, schema, &provider, &model, browser, &prompt);
         }
         Commands::Crawl { url, depth } => commands::handle_crawl(&url, depth),
         Commands::Save { url, database } => commands::handle_save(&url, &database),

@@ -381,6 +381,39 @@ impl ChromeDriverManager {
         Ok(child)
     }
 
+    /// Stop a running ChromeDriver process
+    pub fn stop(mut child: std::process::Child) {
+        println!("Stopping ChromeDriver...");
+        let _ = child.kill();
+    }
+
+    /// Kill any existing ChromeDriver on the given port
+    pub fn kill_existing(port: u16) {
+        use std::process::Command;
+        #[cfg(target_os = "macos")]
+        {
+            let _ = Command::new("pkill")
+                .arg("-f")
+                .arg(format!("chromedriver.*port={}", port))
+                .output();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = Command::new("pkill")
+                .arg("-f")
+                .arg(format!("chromedriver.*port={}", port))
+                .output();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = Command::new("taskkill")
+                .arg("/F")
+                .arg("/IM")
+                .arg("chromedriver.exe")
+                .output();
+        }
+    }
+
     /// Download and start ChromeDriver
     pub async fn download_and_start(
         &mut self,

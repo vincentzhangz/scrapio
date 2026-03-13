@@ -16,7 +16,7 @@ default = []
 axum = { version = "0.8", features = ["macros"] }
 clap = { version = "4", features = ["derive", "env"] }
 reqwest = { version = "0.13", features = ["json"] }
-scrapio-ai = { path = "../scrapio-ai" }
+scrapio-ai = { path = "../scrapio-ai", features = ["browser"] }
 scrapio-browser = { path = "../scrapio-browser" }
 scrapio-classic = { path = "../scrapio-classic" }
 scrapio-core = { path = "../scrapio-core" }

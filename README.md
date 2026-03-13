@@ -56,7 +56,33 @@ scrapio ai https://www.rust-lang.org --schema '{"title": "string", "links": "arr
 
 # Use specific provider (openai, anthropic, ollama)
 scrapio ai https://www.rust-lang.org --provider ollama
+
+# Use browser automation for JavaScript-rendered pages
+scrapio ai https://www.rust-lang.org --browser
+
+# With browser automation and custom model
+scrapio ai https://www.rust-lang.org --browser --model gpt-4o
+
+# With custom prompt to guide the AI
+scrapio ai https://www.rust-lang.org --browser --prompt "Find and extract all the installation commands for different operating systems"
 ```
+
+#### AI Browser Mode
+
+When using `--browser`, the AI uses an agentic approach to navigate and interact with pages:
+
+1. Opens a headless browser and navigates to the URL
+2. Analyzes the page content using the LLM
+3. Decides on next actions (click, scroll, navigate, extract)
+4. Repeats until data is extracted or max steps reached
+
+This is useful for:
+- JavaScript-rendered pages
+- Sites requiring interaction (login, scroll, click)
+- Single-page applications
+- Dynamic content that requires user interaction
+
+The browser runs in stealth mode to avoid detection.
 
 ### Using AI with Ollama (Local Models)
 
@@ -283,6 +309,39 @@ fn main() {
 }
 ```
 
+#### AI Browser Scraping (for JavaScript-rendered pages)
+
+```rust
+use scrapio_ai::{BrowserAiScraper, AiConfig};
+use scrapio_runtime::{Runtime, TokioRuntime};
+
+fn main() {
+    let runtime = TokioRuntime::default();
+    runtime.block_on(async {
+        let config = AiConfig::new()
+            .with_provider("openai")
+            .with_api_key("your-api-key");
+
+        let scraper = BrowserAiScraper::with_config(config);
+
+        let schema = r#"{
+            "title": "string",
+            "description": "string",
+            "install_commands": "array"
+        }"#;
+
+        // AI will navigate, click, scroll as needed to extract data
+        match scraper.scrape("https://www.rust-lang.org/install.html", schema).await {
+            Ok(result) => {
+                println!("Model: {}", result.model);
+                println!("Data: {}", serde_json::to_string_pretty(&result.data).unwrap());
+            }
+            Err(e) => eprintln!("Error: {}", e),
+        }
+    });
+}
+```
+
 ### Spider System
 
 ```rust
@@ -391,7 +450,9 @@ scrapio ai <URL> [OPTIONS]
 
 Options:
   --schema <SCHEMA>      JSON schema for extraction
-  --provider <PROVIDER>   LLM provider: openai, anthropic, ollama (default: openai)
+  --provider <PROVIDER>  LLM provider: openai, anthropic, ollama (default: openai)
+  --browser              Use browser automation for JavaScript-rendered pages
+  --prompt <PROMPT>      Custom prompt/objective for the AI (used with --browser)
 ```
 
 ### Crawl Command

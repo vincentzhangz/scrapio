@@ -2493,10 +2493,12 @@ dependencies = [
  "regex",
  "reqwest",
  "scraper",
+ "scrapio-browser",
  "scrapio-core",
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
