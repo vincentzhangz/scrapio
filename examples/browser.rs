@@ -1,7 +1,7 @@
 //! Browser automation example with stealth mode and automatic ChromeDriver management
 
 use scrapio_browser::{ChromeDriverManager, StealthBrowser, StealthLevel};
-use scrapio_core::{profiles, UserAgentManager};
+use scrapio_core::{UserAgentManager, profiles};
 use scrapio_runtime::{Runtime, TokioRuntime};
 
 fn main() {

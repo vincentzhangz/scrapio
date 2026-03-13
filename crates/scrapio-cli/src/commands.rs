@@ -27,7 +27,14 @@ pub fn handle_classic(url: &str) {
     });
 }
 
-pub fn handle_ai(url: &str, schema: Option<String>, provider: &str, model: &str, use_browser: bool, prompt: &str) {
+pub fn handle_ai(
+    url: &str,
+    schema: Option<String>,
+    provider: &str,
+    model: &str,
+    use_browser: bool,
+    prompt: &str,
+) {
     if use_browser {
         handle_ai_browser(url, schema, provider, model, prompt);
     } else {
@@ -99,7 +106,8 @@ fn handle_ai_browser(url: &str, schema: Option<String>, provider: &str, model: &
             println!("Schema: {}", schema);
 
             scraper.scrape_with_prompt(url, &schema, prompt).await
-        }.await;
+        }
+        .await;
 
         // Always stop ChromeDriver when done
         scrapio_browser::ChromeDriverManager::stop(child);

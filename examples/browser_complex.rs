@@ -1,6 +1,8 @@
 //! Complex browser automation example with ChromeDriverManager, stealth, screenshots, and element interaction
 
-use scrapio_browser::{ChromeDriverChannel, ChromeDriverManager, StealthBrowser, StealthConfig, StealthLevel};
+use scrapio_browser::{
+    ChromeDriverChannel, ChromeDriverManager, StealthBrowser, StealthConfig, StealthLevel,
+};
 use scrapio_core::{Browser, UserAgentManager};
 use scrapio_runtime::{Runtime, TokioRuntime};
 
@@ -11,8 +13,8 @@ fn main() {
 
         // Step 1: Setup ChromeDriver with auto-download
         println!("--- Step 1: Setup ChromeDriver ---");
-        let mut driver_manager = ChromeDriverManager::new()
-            .with_channel(ChromeDriverChannel::Stable);
+        let mut driver_manager =
+            ChromeDriverManager::new().with_channel(ChromeDriverChannel::Stable);
 
         // Optional: Use specific version
         // let mut driver_manager = ChromeDriverManager::new()

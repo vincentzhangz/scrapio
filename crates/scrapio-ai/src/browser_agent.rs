@@ -137,7 +137,8 @@ impl BrowserAiScraper {
         schema: &str,
         prompt: &str,
     ) -> Result<super::AiExtractionResult, ScrapioError> {
-        self.scrape_with_options(url, schema, false, None, prompt).await
+        self.scrape_with_options(url, schema, false, None, prompt)
+            .await
     }
 
     /// Scrape with additional options
@@ -151,7 +152,9 @@ impl BrowserAiScraper {
     ) -> Result<super::AiExtractionResult, ScrapioError> {
         let mut browser = self.create_browser(stealth_level);
 
-        let result = self.run_agent_loop(&mut browser, url, schema, custom_prompt).await;
+        let result = self
+            .run_agent_loop(&mut browser, url, schema, custom_prompt)
+            .await;
 
         let _ = browser.close().await;
 
@@ -195,9 +198,7 @@ impl BrowserAiScraper {
         state.current_url = initial_url.to_string();
         state.page_title = browser.title().await.unwrap_or_default();
         state.html_content = browser.html().await.unwrap_or_default();
-        state
-            .action_history
-            .push(format!("goto: {}", initial_url));
+        state.action_history.push(format!("goto: {}", initial_url));
 
         while step < self.max_steps {
             step += 1;
@@ -254,9 +255,15 @@ impl BrowserAiScraper {
     ) -> Result<BrowserAction, ScrapioError> {
         // Build the objective/instruction part
         let custom_instruction = if custom_prompt.is_empty() {
-            format!("Your goal is to extract data from the webpage according to this schema: {}", schema)
+            format!(
+                "Your goal is to extract data from the webpage according to this schema: {}",
+                schema
+            )
         } else {
-            format!("Your goal is: {}\n\nAdditionally, extract data according to this schema: {}", custom_prompt, schema)
+            format!(
+                "Your goal is: {}\n\nAdditionally, extract data according to this schema: {}",
+                custom_prompt, schema
+            )
         };
 
         let prompt = format!(
@@ -308,21 +315,23 @@ Decide what to do next and respond with ONLY the JSON object."#,
             .trim();
 
         // Parse the response as a BrowserAction
-        let action: BrowserAction = serde_json::from_str(cleaned)
-            .unwrap_or_else(|_| {
-                // Try to find JSON in the response
-                if let Some(start) = cleaned.find('{') {
-                    if let Some(end) = cleaned.rfind('}') {
-                        serde_json::from_str(&cleaned[start..=end]).unwrap_or(BrowserAction::Extract)
-                    } else {
-                        BrowserAction::Extract
-                    }
+        let action: BrowserAction = serde_json::from_str(cleaned).unwrap_or_else(|_| {
+            // Try to find JSON in the response
+            if let Some(start) = cleaned.find('{') {
+                if let Some(end) = cleaned.rfind('}') {
+                    serde_json::from_str(&cleaned[start..=end]).unwrap_or(BrowserAction::Extract)
                 } else {
-                    // If no valid JSON found, default to extract
-                    tracing::warn!("Could not parse AI response as action, defaulting to extract: {}", cleaned);
                     BrowserAction::Extract
                 }
-            });
+            } else {
+                // If no valid JSON found, default to extract
+                tracing::warn!(
+                    "Could not parse AI response as action, defaulting to extract: {}",
+                    cleaned
+                );
+                BrowserAction::Extract
+            }
+        });
 
         Ok(action)
     }
@@ -342,35 +351,29 @@ Decide what to do next and respond with ONLY the JSON object."#,
                 state.current_url = url.clone();
                 state.page_title = browser.title().await.unwrap_or_default();
                 state.html_content = browser.html().await.unwrap_or_default();
-                state
-                    .action_history
-                    .push(format!("goto: {}", url));
+                state.action_history.push(format!("goto: {}", url));
                 Ok(ActionResult::Success {
                     data: None,
                     message: Some(format!("Navigated to {}", url)),
                 })
             }
 
-            BrowserAction::Click { selector } => {
-                match browser.click(selector).await {
-                    Ok(_) => {
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                        state.current_url = browser.url().await.unwrap_or_default();
-                        state.page_title = browser.title().await.unwrap_or_default();
-                        state.html_content = browser.html().await.unwrap_or_default();
-                        state
-                            .action_history
-                            .push(format!("click: {}", selector));
-                        Ok(ActionResult::Success {
-                            data: None,
-                            message: Some(format!("Clicked {}", selector)),
-                        })
-                    }
-                    Err(e) => Ok(ActionResult::Error {
-                        message: format!("Click failed: {}", e),
-                    }),
+            BrowserAction::Click { selector } => match browser.click(selector).await {
+                Ok(_) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    state.current_url = browser.url().await.unwrap_or_default();
+                    state.page_title = browser.title().await.unwrap_or_default();
+                    state.html_content = browser.html().await.unwrap_or_default();
+                    state.action_history.push(format!("click: {}", selector));
+                    Ok(ActionResult::Success {
+                        data: None,
+                        message: Some(format!("Clicked {}", selector)),
+                    })
                 }
-            }
+                Err(e) => Ok(ActionResult::Error {
+                    message: format!("Click failed: {}", e),
+                }),
+            },
 
             BrowserAction::Scroll { pixels } => {
                 browser.scroll(*pixels).await?;
@@ -454,20 +457,19 @@ Now extract the data:[/INST]"#,
                         .trim_end_matches("```")
                         .trim();
 
-                    serde_json::from_str(cleaned)
-                        .unwrap_or_else(|_| {
-                            // Try to find JSON in the response
-                            if let Some(start) = cleaned.find('{') {
-                                if let Some(end) = cleaned.rfind('}') {
-                                    serde_json::from_str(&cleaned[start..=end])
-                                        .unwrap_or_else(|_| serde_json::json!({ "raw": cleaned }))
-                                } else {
-                                    serde_json::json!({ "raw": cleaned })
-                                }
+                    serde_json::from_str(cleaned).unwrap_or_else(|_| {
+                        // Try to find JSON in the response
+                        if let Some(start) = cleaned.find('{') {
+                            if let Some(end) = cleaned.rfind('}') {
+                                serde_json::from_str(&cleaned[start..=end])
+                                    .unwrap_or_else(|_| serde_json::json!({ "raw": cleaned }))
                             } else {
                                 serde_json::json!({ "raw": cleaned })
                             }
-                        })
+                        } else {
+                            serde_json::json!({ "raw": cleaned })
+                        }
+                    })
                 };
 
                 state.extracted_data.push(final_result.clone());
@@ -542,7 +544,15 @@ Now extract the data:[/INST]"#,
                 )
                 .await
             }
-            "ollama" => provider::call_ollama(&client, &self.config, prompt, r#"{"action": {"type": "string"}}"#).await,
+            "ollama" => {
+                provider::call_ollama(
+                    &client,
+                    &self.config,
+                    prompt,
+                    r#"{"action": {"type": "string"}}"#,
+                )
+                .await
+            }
             _ => Err(ScrapioError::Ai(format!(
                 "Unknown provider: {}",
                 self.config.provider

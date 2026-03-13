@@ -21,7 +21,7 @@ pub mod browser_agent;
 pub use config::AiConfig;
 
 #[cfg(feature = "browser")]
-pub use browser_agent::{BrowserAction, BrowserAiScraper, ActionResult, AgentState};
+pub use browser_agent::{ActionResult, AgentState, BrowserAction, BrowserAiScraper};
 
 /// Result from AI extraction
 #[derive(Debug, Clone, Serialize, Deserialize)]
