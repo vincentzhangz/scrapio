@@ -104,33 +104,14 @@ impl AiScraper {
         include_markdown: bool,
         url: &str,
     ) -> ScrapioResult<AiExtractionResult> {
+        // Use fallback if API key is not set (except for Ollama which doesn't require one)
         if self.config.provider != "ollama" && self.config.api_key.is_none() {
             return Ok(extraction::fallback_extraction(content, url));
         }
 
-        let response = match self.config.provider.as_str() {
-            "openai" => {
-                let api_key = self
-                    .config
-                    .api_key
-                    .as_deref()
-                    .ok_or_else(|| ScrapioError::Ai("API key not set".to_string()))?;
-                provider::call_openai(&self.client, &self.config, api_key, content, schema).await
-            }
-            "anthropic" => {
-                let api_key = self
-                    .config
-                    .api_key
-                    .as_deref()
-                    .ok_or_else(|| ScrapioError::Ai("API key not set".to_string()))?;
-                provider::call_anthropic(&self.client, &self.config, api_key, content, schema).await
-            }
-            "ollama" => provider::call_ollama(&self.client, &self.config, content, schema).await,
-            _ => Err(ScrapioError::Ai(format!(
-                "Unknown provider: {}",
-                self.config.provider
-            ))),
-        }?;
+        // Create provider and extract
+        let llm_provider = provider::create_provider(&self.config);
+        let response = llm_provider.extract(content, schema).await?;
 
         let data: Value = serde_json::from_str(&response)
             .unwrap_or_else(|_| serde_json::json!({ "raw": response }));

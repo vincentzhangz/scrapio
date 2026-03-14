@@ -6,7 +6,9 @@ pub mod chromedriver;
 pub mod stealth;
 
 pub use browser::StealthBrowser;
-pub use chromedriver::{ChromeDriverChannel, ChromeDriverError, ChromeDriverManager};
+pub use chromedriver::{
+    ChromeDriverChannel, ChromeDriverError, ChromeDriverManager, ChromeDriverSession,
+};
 pub use scrapio_core::error::ScrapioError;
 pub use stealth::{StealthConfig, StealthLevel};
 

@@ -190,7 +190,7 @@ pub async fn scrape(
             &payload.prompt
         };
         match scraper
-            .scrape_with_prompt(&payload.url, schema, prompt)
+            .scrape_with_managed_browser(&payload.url, schema, prompt, None, true)
             .await
         {
             Ok(result) => {

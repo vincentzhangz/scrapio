@@ -3,7 +3,7 @@
 //! This module provides the main `StealthBrowser` struct for controlling
 //! a browser with stealth anti-detection features.
 
-use fantoccini::Client;
+use fantoccini::{Client, ClientBuilder};
 use scrapio_core::error::ScrapioError;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -148,22 +148,11 @@ impl StealthBrowser {
         }
 
         // Build Chrome capabilities
-        let mut caps = serde_json::json!({
-            "goog:chromeOptions": {
-                "args": self.build_chrome_args_as_values()
-            }
-        });
+        let mut builder = ClientBuilder::native();
+        builder.capabilities(self.build_capabilities());
 
-        if let Some(ref stealth) = self.config.stealth
-            && let Some(ua) = stealth.get_user_agent()
-        {
-            let opts = caps["goog:chromeOptions"].as_object_mut().unwrap();
-            let args = opts["args"].as_array_mut().unwrap();
-            args.push(Value::String(format!("user-agent={}", ua)));
-        }
-
-        #[allow(deprecated)]
-        let client = Client::new(&self.webdriver_url)
+        let client = builder
+            .connect(&self.webdriver_url)
             .await
             .map_err(|e| ScrapioError::Browser(format!("Failed to connect to WebDriver: {}", e)))?;
 
@@ -188,19 +177,19 @@ impl StealthBrowser {
     /// Build Chrome arguments as JSON values
     fn build_chrome_args_as_values(&self) -> Vec<Value> {
         let mut args: Vec<Value> = vec![
-            Value::String("no-sandbox".to_string()),
-            Value::String("disable-dev-shm-usage".to_string()),
-            Value::String("disable-blink-features=AutomationControlled".to_string()),
+            Value::String("--no-sandbox".to_string()),
+            Value::String("--disable-dev-shm-usage".to_string()),
+            Value::String("--disable-blink-features=AutomationControlled".to_string()),
         ];
 
         if self.config.headless {
-            args.push(Value::String("headless".to_string()));
-            args.push(Value::String("disable-gpu".to_string()));
+            args.push(Value::String("--headless=new".to_string()));
+            args.push(Value::String("--disable-gpu".to_string()));
         }
 
         // Add window size if specified
         if let Some((width, height)) = self.config.window_size {
-            args.push(Value::String(format!("window-size={},{}", width, height)));
+            args.push(Value::String(format!("--window-size={},{}", width, height)));
         }
 
         // Add custom arguments
@@ -209,6 +198,52 @@ impl StealthBrowser {
         }
 
         args
+    }
+
+    fn build_capabilities(&self) -> fantoccini::wd::Capabilities {
+        let mut caps = fantoccini::wd::Capabilities::new();
+        let mut chrome_options = serde_json::Map::new();
+
+        chrome_options.insert(
+            "args".to_string(),
+            Value::Array(self.build_chrome_args_as_values()),
+        );
+
+        if let Some(path) = &self.config.chrome_path {
+            chrome_options.insert(
+                "binary".to_string(),
+                Value::String(path.display().to_string()),
+            );
+        }
+
+        if let Some(ref stealth) = self.config.stealth
+            && let Some(ua) = stealth.get_user_agent()
+        {
+            let args = chrome_options
+                .entry("args".to_string())
+                .or_insert_with(|| Value::Array(Vec::new()));
+
+            if let Some(args) = args.as_array_mut() {
+                args.push(Value::String(format!("--user-agent={}", ua)));
+            }
+        }
+
+        caps.insert(
+            "browserName".to_string(),
+            Value::String("chrome".to_string()),
+        );
+        caps.insert(
+            "goog:chromeOptions".to_string(),
+            Value::Object(chrome_options),
+        );
+        caps.insert(
+            "timeouts".to_string(),
+            serde_json::json!({
+                "pageLoad": self.config.timeout.as_millis() as u64
+            }),
+        );
+
+        caps
     }
 
     /// Navigate to a URL
@@ -602,12 +637,25 @@ mod tests {
             .iter()
             .filter_map(|v| v.as_str().map(String::from))
             .collect();
-        assert!(args_str.contains(&"no-sandbox".to_string()));
-        assert!(args_str.contains(&"headless".to_string()));
+        assert!(args_str.contains(&"--no-sandbox".to_string()));
+        assert!(args_str.contains(&"--headless=new".to_string()));
         assert!(
             args_str
                 .iter()
                 .any(|s| s.contains("1920") && s.contains("1080"))
         );
+    }
+
+    #[test]
+    fn test_build_capabilities_includes_chrome_options() {
+        let browser = StealthBrowser::new().headless(true).window_size(1280, 720);
+        let caps = browser.build_capabilities();
+
+        assert_eq!(
+            caps.get("browserName").and_then(Value::as_str),
+            Some("chrome")
+        );
+        assert!(caps.contains_key("goog:chromeOptions"));
+        assert!(caps.contains_key("timeouts"));
     }
 }

@@ -9,7 +9,9 @@ use serde_json::Value;
 use std::fmt;
 
 #[cfg(feature = "browser")]
-use scrapio_browser::{StealthBrowser, StealthConfig, StealthLevel};
+use scrapio_browser::{
+    ChromeDriverManager, ChromeDriverSession, StealthBrowser, StealthConfig, StealthLevel,
+};
 
 #[cfg(feature = "browser")]
 use scrapio_core::error::ScrapioError;
@@ -23,6 +25,17 @@ const DEFAULT_MAX_STEPS: usize = 10;
 
 /// Maximum number of retries for the same failed action
 const MAX_ACTION_RETRIES: usize = 3;
+
+/// Options for webdriver-based scraping
+pub struct WebdriverScrapeOptions<'a> {
+    pub url: &'a str,
+    pub schema: &'a str,
+    pub include_markdown: bool,
+    pub stealth_level: Option<StealthLevel>,
+    pub custom_prompt: &'a str,
+    pub webdriver_url: String,
+    pub headless: bool,
+}
 
 /// Browser action that the AI can request
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -425,6 +438,39 @@ impl BrowserAiScraper {
             .await
     }
 
+    /// Scrape with a managed ChromeDriver lifecycle.
+    pub async fn scrape_with_managed_browser(
+        &self,
+        url: &str,
+        schema: &str,
+        prompt: &str,
+        driver_path: Option<&str>,
+        headless: bool,
+    ) -> Result<super::AiExtractionResult, ScrapioError> {
+        let driver = if let Some(path) = driver_path {
+            ChromeDriverSession::start_with(ChromeDriverManager::new().with_path(path.into()))
+                .await
+                .map_err(|e| {
+                    ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
+                })?
+        } else {
+            ChromeDriverSession::start().await.map_err(|e| {
+                ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
+            })?
+        };
+
+        let options = WebdriverScrapeOptions {
+            url,
+            schema,
+            include_markdown: false,
+            stealth_level: None,
+            custom_prompt: prompt,
+            webdriver_url: driver.webdriver_url(),
+            headless,
+        };
+        self.scrape_with_webdriver(options).await
+    }
+
     /// Scrape with additional options
     pub async fn scrape_with_options(
         &self,
@@ -434,18 +480,43 @@ impl BrowserAiScraper {
         stealth_level: Option<StealthLevel>,
         custom_prompt: &str,
     ) -> Result<super::AiExtractionResult, ScrapioError> {
-        let mut browser = self.create_browser(stealth_level);
+        let options = WebdriverScrapeOptions {
+            url,
+            schema,
+            include_markdown,
+            stealth_level,
+            custom_prompt,
+            webdriver_url: "http://localhost:9515".to_string(),
+            headless: true,
+        };
+        self.scrape_with_webdriver(options).await
+    }
+
+    async fn scrape_with_webdriver(
+        &self,
+        options: WebdriverScrapeOptions<'_>,
+    ) -> Result<super::AiExtractionResult, ScrapioError> {
+        let mut browser = self.create_browser(
+            options.stealth_level,
+            &options.webdriver_url,
+            options.headless,
+        );
 
         let result = self
-            .run_agent_loop(&mut browser, url, schema, custom_prompt)
+            .run_agent_loop(
+                &mut browser,
+                options.url,
+                options.schema,
+                options.custom_prompt,
+            )
             .await;
 
         let _ = browser.close().await;
 
         result.map(|data| super::AiExtractionResult {
-            url: url.to_string(),
+            url: options.url.to_string(),
             data,
-            markdown: if include_markdown {
+            markdown: if options.include_markdown {
                 Some(String::new())
             } else {
                 None
@@ -456,12 +527,17 @@ impl BrowserAiScraper {
         })
     }
 
-    fn create_browser(&self, stealth_level: Option<StealthLevel>) -> StealthBrowser {
+    fn create_browser(
+        &self,
+        stealth_level: Option<StealthLevel>,
+        webdriver_url: &str,
+        headless: bool,
+    ) -> StealthBrowser {
         let level = stealth_level.unwrap_or(StealthLevel::Basic);
         let config = StealthConfig::new(level);
 
-        StealthBrowser::new()
-            .headless(true)
+        StealthBrowser::with_webdriver(webdriver_url)
+            .headless(headless)
             .stealth(config)
             .window_size(1920, 1080)
     }
@@ -984,47 +1060,15 @@ Now extract the data:[/INST]"#,
 
     /// Call AI for action planning
     async fn call_ai_for_action(&self, prompt: &str) -> Result<String, ScrapioError> {
-        let client = reqwest::Client::new();
-
-        match self.config.provider.as_str() {
-            "openai" => {
-                let api_key = self
-                    .config
-                    .api_key
-                    .as_deref()
-                    .ok_or_else(|| ScrapioError::Ai("API key not set".to_string()))?;
-                provider::call_openai(
-                    &client,
-                    &self.config,
-                    api_key,
-                    prompt,
-                    r#"{"type": "string"}"#,
-                )
-                .await
-            }
-            "anthropic" => {
-                let api_key = self
-                    .config
-                    .api_key
-                    .as_deref()
-                    .ok_or_else(|| ScrapioError::Ai("API key not set".to_string()))?;
-                provider::call_anthropic(
-                    &client,
-                    &self.config,
-                    api_key,
-                    prompt,
-                    r#"{"type": "string"}"#,
-                )
-                .await
-            }
-            "ollama" => {
-                provider::call_ollama(&client, &self.config, prompt, r#"{"type": "string"}"#).await
-            }
-            _ => Err(ScrapioError::Ai(format!(
-                "Unknown provider: {}",
-                self.config.provider
-            ))),
+        // Use fallback if API key is not set (except for Ollama which doesn't require one)
+        if self.config.provider != "ollama" && self.config.api_key.is_none() {
+            return Err(ScrapioError::Ai(
+                "API key not set. Set OPENAI_API_KEY or ANTHROPIC_API_KEY".to_string(),
+            ));
         }
+
+        let provider = provider::create_provider(&self.config);
+        provider.extract(prompt, r#"{"type": "string"}"#).await
     }
 
     /// Call AI for data extraction
@@ -1033,7 +1077,12 @@ Now extract the data:[/INST]"#,
         prompt: &str,
         schema: &str,
     ) -> Result<String, ScrapioError> {
-        let client = reqwest::Client::new();
+        // Use fallback if API key is not set (except for Ollama which doesn't require one)
+        if self.config.provider != "ollama" && self.config.api_key.is_none() {
+            return Err(ScrapioError::Ai(
+                "API key not set. Set OPENAI_API_KEY or ANTHROPIC_API_KEY".to_string(),
+            ));
+        }
 
         // Use schema as the output format hint for extraction
         let schema_hint = if schema.is_empty() || schema == "{}" {
@@ -1042,29 +1091,8 @@ Now extract the data:[/INST]"#,
             schema.to_string()
         };
 
-        match self.config.provider.as_str() {
-            "openai" => {
-                let api_key = self
-                    .config
-                    .api_key
-                    .as_deref()
-                    .ok_or_else(|| ScrapioError::Ai("API key not set".to_string()))?;
-                provider::call_openai(&client, &self.config, api_key, prompt, &schema_hint).await
-            }
-            "anthropic" => {
-                let api_key = self
-                    .config
-                    .api_key
-                    .as_deref()
-                    .ok_or_else(|| ScrapioError::Ai("API key not set".to_string()))?;
-                provider::call_anthropic(&client, &self.config, api_key, prompt, &schema_hint).await
-            }
-            "ollama" => provider::call_ollama(&client, &self.config, prompt, &schema_hint).await,
-            _ => Err(ScrapioError::Ai(format!(
-                "Unknown provider: {}",
-                self.config.provider
-            ))),
-        }
+        let provider = provider::create_provider(&self.config);
+        provider.extract(prompt, &schema_hint).await
     }
 }
 

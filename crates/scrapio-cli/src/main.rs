@@ -35,6 +35,10 @@ enum Commands {
         prompt: String,
         #[arg(long, default_value = "10")]
         max_steps: usize,
+        #[arg(long)]
+        driver_path: Option<String>,
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        headless: bool,
     },
     Crawl {
         url: String,
@@ -60,12 +64,14 @@ enum Commands {
     },
     Browser {
         url: String,
-        #[arg(long, default_value = "true")]
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
         headless: bool,
         #[arg(long)]
         stealth: Option<String>,
         #[arg(long)]
         script: Option<String>,
+        #[arg(long)]
+        driver_path: Option<String>,
     },
     Version,
 }
@@ -83,8 +89,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             browser,
             prompt,
             max_steps,
+            driver_path,
+            headless,
         } => {
-            commands::handle_ai(&url, schema, &provider, &model, browser, &prompt, max_steps);
+            commands::handle_ai(
+                &url,
+                schema,
+                &provider,
+                &model,
+                browser,
+                &prompt,
+                max_steps,
+                driver_path.as_deref(),
+                headless,
+            );
         }
         Commands::Crawl { url, depth } => commands::handle_crawl(&url, depth),
         Commands::Save { url, database } => commands::handle_save(&url, &database),
@@ -100,8 +118,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             headless,
             stealth,
             script,
+            driver_path,
         } => {
-            commands::handle_browser(&url, headless, stealth.as_deref(), script.as_deref());
+            commands::handle_browser(
+                &url,
+                headless,
+                stealth.as_deref(),
+                script.as_deref(),
+                driver_path.as_deref(),
+            );
         }
         Commands::Version => {
             println!("scrapio v{}", env!("CARGO_PKG_VERSION"));

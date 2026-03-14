@@ -2,7 +2,9 @@
 
 use scrapio_ai::AiScraper;
 use scrapio_ai::BrowserAiScraper;
-use scrapio_browser::{StealthBrowser, StealthConfig, StealthLevel};
+use scrapio_browser::{
+    ChromeDriverManager, ChromeDriverSession, StealthBrowser, StealthConfig, StealthLevel,
+};
 use scrapio_classic::Scraper;
 use scrapio_runtime::Runtime;
 use scrapio_storage::Storage;
@@ -27,6 +29,20 @@ pub fn handle_classic(url: &str) {
     });
 }
 
+/// Options for AI scraping
+pub struct AiScrapeOptions {
+    pub url: String,
+    pub schema: Option<String>,
+    pub provider: String,
+    pub model: String,
+    pub use_browser: bool,
+    pub prompt: String,
+    pub max_steps: usize,
+    pub driver_path: Option<String>,
+    pub headless: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn handle_ai(
     url: &str,
     schema: Option<String>,
@@ -35,11 +51,30 @@ pub fn handle_ai(
     use_browser: bool,
     prompt: &str,
     max_steps: usize,
+    driver_path: Option<&str>,
+    headless: bool,
 ) {
-    if use_browser {
-        handle_ai_browser(url, schema, provider, model, prompt, max_steps);
+    let options = AiScrapeOptions {
+        url: url.to_string(),
+        schema,
+        provider: provider.to_string(),
+        model: model.to_string(),
+        use_browser,
+        prompt: prompt.to_string(),
+        max_steps,
+        driver_path: driver_path.map(|s| s.to_string()),
+        headless,
+    };
+
+    if options.use_browser {
+        handle_ai_browser(options);
     } else {
-        handle_ai_http(url, schema, provider, model);
+        handle_ai_http(
+            &options.url,
+            options.schema,
+            &options.provider,
+            &options.model,
+        );
     }
 }
 
@@ -67,59 +102,34 @@ fn handle_ai_http(url: &str, schema: Option<String>, provider: &str, model: &str
     });
 }
 
-fn handle_ai_browser(
-    url: &str,
-    schema: Option<String>,
-    provider: &str,
-    model: &str,
-    prompt: &str,
-    max_steps: usize,
-) {
+fn handle_ai_browser(options: AiScrapeOptions) {
     run_async(async {
-        // Kill any existing ChromeDriver on port 9515
-        scrapio_browser::ChromeDriverManager::kill_existing(9515);
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-        // Auto-download and start ChromeDriver
-        println!("Setting up ChromeDriver...");
-        let mut driver_manager = scrapio_browser::ChromeDriverManager::new();
-
-        let child = match driver_manager.download_and_start(9515).await {
-            Ok(c) => {
-                println!("ChromeDriver started on port 9515");
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                c
-            }
-            Err(e) => {
-                eprintln!("Failed to start ChromeDriver: {}", e);
-                return;
-            }
-        };
-
-        // Use a scope to ensure ChromeDriver is stopped even on error
-        let result = async {
-            let mut config = scrapio_ai::AiConfig::new().with_provider(provider);
-            if !model.is_empty() {
-                config = config.with_model(model);
-            }
-
-            let scraper = BrowserAiScraper::with_config(config).with_max_steps(max_steps);
-            let schema = schema.unwrap_or_else(|| "{}".to_string());
-
-            println!("\nUsing browser automation for AI scraping...");
-            println!("URL: {}", url);
-            if !prompt.is_empty() {
-                println!("Prompt: {}", prompt);
-            }
-            println!("Schema: {}", schema);
-            println!("Max steps: {}", max_steps);
-
-            scraper.scrape_with_prompt(url, &schema, prompt).await
+        let mut config = scrapio_ai::AiConfig::new().with_provider(&options.provider);
+        if !options.model.is_empty() {
+            config = config.with_model(&options.model);
         }
-        .await;
 
-        // Always stop ChromeDriver when done
-        scrapio_browser::ChromeDriverManager::stop(child);
+        let scraper = BrowserAiScraper::with_config(config).with_max_steps(options.max_steps);
+        let schema = options.schema.unwrap_or_else(|| "{}".to_string());
+
+        println!("\nUsing browser automation for AI scraping...");
+        println!("URL: {}", options.url);
+        if !options.prompt.is_empty() {
+            println!("Prompt: {}", options.prompt);
+        }
+        println!("Schema: {}", schema);
+        println!("Max steps: {}", options.max_steps);
+        println!("Headless: {}", options.headless);
+
+        let result = scraper
+            .scrape_with_managed_browser(
+                &options.url,
+                &schema,
+                &options.prompt,
+                options.driver_path.as_deref(),
+                options.headless,
+            )
+            .await;
 
         match result {
             Ok(result) => {
@@ -219,7 +229,13 @@ pub fn handle_list(database: &str, limit: usize) {
     });
 }
 
-pub fn handle_browser(url: &str, headless: bool, stealth: Option<&str>, script: Option<&str>) {
+pub fn handle_browser(
+    url: &str,
+    headless: bool,
+    stealth: Option<&str>,
+    script: Option<&str>,
+    driver_path: Option<&str>,
+) {
     run_async(async {
         // Determine stealth level
         let stealth_level = match stealth {
@@ -229,8 +245,29 @@ pub fn handle_browser(url: &str, headless: bool, stealth: Option<&str>, script: 
             None => StealthLevel::None,
         };
 
+        // Create ChromeDriverSession with custom path if provided
+        let driver = if let Some(path) = driver_path {
+            match ChromeDriverSession::start_with(ChromeDriverManager::new().with_path(path.into()))
+                .await
+            {
+                Ok(driver) => driver,
+                Err(e) => {
+                    eprintln!("Failed to start ChromeDriver: {}", e);
+                    return;
+                }
+            }
+        } else {
+            match ChromeDriverSession::start().await {
+                Ok(driver) => driver,
+                Err(e) => {
+                    eprintln!("Failed to start ChromeDriver: {}", e);
+                    return;
+                }
+            }
+        };
+
         // Build browser config
-        let mut builder = StealthBrowser::new().headless(headless);
+        let mut builder = StealthBrowser::with_webdriver(driver.webdriver_url()).headless(headless);
 
         if stealth_level != StealthLevel::None {
             let config = StealthConfig::new(stealth_level);
