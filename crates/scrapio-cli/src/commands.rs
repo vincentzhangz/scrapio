@@ -34,9 +34,10 @@ pub fn handle_ai(
     model: &str,
     use_browser: bool,
     prompt: &str,
+    max_steps: usize,
 ) {
     if use_browser {
-        handle_ai_browser(url, schema, provider, model, prompt);
+        handle_ai_browser(url, schema, provider, model, prompt, max_steps);
     } else {
         handle_ai_http(url, schema, provider, model);
     }
@@ -66,7 +67,14 @@ fn handle_ai_http(url: &str, schema: Option<String>, provider: &str, model: &str
     });
 }
 
-fn handle_ai_browser(url: &str, schema: Option<String>, provider: &str, model: &str, prompt: &str) {
+fn handle_ai_browser(
+    url: &str,
+    schema: Option<String>,
+    provider: &str,
+    model: &str,
+    prompt: &str,
+    max_steps: usize,
+) {
     run_async(async {
         // Kill any existing ChromeDriver on port 9515
         scrapio_browser::ChromeDriverManager::kill_existing(9515);
@@ -95,7 +103,7 @@ fn handle_ai_browser(url: &str, schema: Option<String>, provider: &str, model: &
                 config = config.with_model(model);
             }
 
-            let scraper = BrowserAiScraper::with_config(config);
+            let scraper = BrowserAiScraper::with_config(config).with_max_steps(max_steps);
             let schema = schema.unwrap_or_else(|| "{}".to_string());
 
             println!("\nUsing browser automation for AI scraping...");
@@ -104,6 +112,7 @@ fn handle_ai_browser(url: &str, schema: Option<String>, provider: &str, model: &
                 println!("Prompt: {}", prompt);
             }
             println!("Schema: {}", schema);
+            println!("Max steps: {}", max_steps);
 
             scraper.scrape_with_prompt(url, &schema, prompt).await
         }

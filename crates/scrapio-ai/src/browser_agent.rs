@@ -216,14 +216,20 @@ fn extract_interactable_elements(html: &str) -> Vec<InteractableElement> {
                 break;
             }
             let href = cap.get(1).map(|m| m.as_str().to_string());
-            let text = cap.get(2).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+            let text = cap
+                .get(2)
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default();
             if !text.is_empty() {
                 element_counter += 1;
                 elements.push(InteractableElement {
                     id: format!("e{}", element_counter),
                     element_type: "link".to_string(),
                     text: text.clone(),
-                    selector_hint: Some(format!("a[href='{}']", href.as_ref().unwrap_or(&String::new()))),
+                    selector_hint: Some(format!(
+                        "a[href='{}']",
+                        href.as_ref().unwrap_or(&String::new())
+                    )),
                     href,
                     placeholder: None,
                 });
@@ -238,7 +244,10 @@ fn extract_interactable_elements(html: &str) -> Vec<InteractableElement> {
             if element_counter >= 20 {
                 break;
             }
-            let text = cap.get(1).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+            let text = cap
+                .get(1)
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default();
             if !text.is_empty() {
                 element_counter += 1;
                 elements.push(InteractableElement {
@@ -254,13 +263,17 @@ fn extract_interactable_elements(html: &str) -> Vec<InteractableElement> {
     }
 
     // Find inputs with type submit or button
-    let input_re = regex::Regex::new(r#"<input[^>]*type="(button|submit)"[^>]*value="([^"]*)"[^>]*>"#).ok();
+    let input_re =
+        regex::Regex::new(r#"<input[^>]*type="(button|submit)"[^>]*value="([^"]*)"[^>]*>"#).ok();
     if let Some(re) = input_re {
         for cap in re.captures_iter(html) {
             if element_counter >= 20 {
                 break;
             }
-            let value = cap.get(2).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+            let value = cap
+                .get(2)
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default();
             if !value.is_empty() {
                 element_counter += 1;
                 elements.push(InteractableElement {
@@ -282,7 +295,10 @@ fn extract_interactable_elements(html: &str) -> Vec<InteractableElement> {
             if element_counter >= 20 {
                 break;
             }
-            let placeholder = cap.get(1).map(|m| m.as_str().trim().to_string()).unwrap_or_default();
+            let placeholder = cap
+                .get(1)
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_default();
             if !placeholder.is_empty() {
                 element_counter += 1;
                 elements.push(InteractableElement {
@@ -465,9 +481,7 @@ impl BrowserAiScraper {
         // Navigate to initial URL
         browser.goto(initial_url).await?;
         self.refresh_state(browser, &mut state).await?;
-        state
-            .action_history
-            .push(format!("goto: {}", initial_url));
+        state.action_history.push(format!("goto: {}", initial_url));
 
         while step < self.max_steps {
             step += 1;
@@ -493,11 +507,7 @@ impl BrowserAiScraper {
                 self.validate_action(&action, &snapshot, &state.action_history)
             {
                 tracing::warn!("Action validation failed: {}", validation_error);
-                state.record_failure(
-                    &format!("{:?}", action),
-                    "",
-                    &validation_error,
-                );
+                state.record_failure(&format!("{:?}", action), "", &validation_error);
                 // Try extract as fallback
                 let extract_action = BrowserAction::Extract;
                 let result = self
@@ -531,11 +541,7 @@ impl BrowserAiScraper {
                 }
                 ActionResult::Error { message } => {
                     tracing::warn!("Action error: {}", message);
-                    state.record_failure(
-                        &action.to_history_string(),
-                        "",
-                        &message,
-                    );
+                    state.record_failure(&action.to_history_string(), "", &message);
                 }
                 ActionResult::Done { data } => {
                     // Extract completed (terminal)
@@ -593,7 +599,12 @@ impl BrowserAiScraper {
         let title = browser.title().await.unwrap_or_default();
         let html = browser.html().await.unwrap_or_default();
 
-        Ok(PageSnapshot::from_html(&url, &title, &html, &state.failures))
+        Ok(PageSnapshot::from_html(
+            &url,
+            &title,
+            &html,
+            &state.failures,
+        ))
     }
 
     /// Validate action before execution
@@ -607,12 +618,12 @@ impl BrowserAiScraper {
         match action {
             BrowserAction::ClickElement { element_id } => {
                 // Check if element exists in snapshot
-                let exists = snapshot
-                    .elements
-                    .iter()
-                    .any(|e| e.id == *element_id);
+                let exists = snapshot.elements.iter().any(|e| e.id == *element_id);
                 if !exists {
-                    return Some(format!("Element '{}' not found in page snapshot", element_id));
+                    return Some(format!(
+                        "Element '{}' not found in page snapshot",
+                        element_id
+                    ));
                 }
             }
             BrowserAction::TypeInto { element_id, text } => {
@@ -1007,13 +1018,7 @@ Now extract the data:[/INST]"#,
                 .await
             }
             "ollama" => {
-                provider::call_ollama(
-                    &client,
-                    &self.config,
-                    prompt,
-                    r#"{"type": "string"}"#,
-                )
-                .await
+                provider::call_ollama(&client, &self.config, prompt, r#"{"type": "string"}"#).await
             }
             _ => Err(ScrapioError::Ai(format!(
                 "Unknown provider: {}",
@@ -1023,7 +1028,11 @@ Now extract the data:[/INST]"#,
     }
 
     /// Call AI for data extraction
-    async fn call_ai_for_extraction(&self, prompt: &str, schema: &str) -> Result<String, ScrapioError> {
+    async fn call_ai_for_extraction(
+        &self,
+        prompt: &str,
+        schema: &str,
+    ) -> Result<String, ScrapioError> {
         let client = reqwest::Client::new();
 
         // Use schema as the output format hint for extraction
@@ -1040,14 +1049,7 @@ Now extract the data:[/INST]"#,
                     .api_key
                     .as_deref()
                     .ok_or_else(|| ScrapioError::Ai("API key not set".to_string()))?;
-                provider::call_openai(
-                    &client,
-                    &self.config,
-                    api_key,
-                    prompt,
-                    &schema_hint,
-                )
-                .await
+                provider::call_openai(&client, &self.config, api_key, prompt, &schema_hint).await
             }
             "anthropic" => {
                 let api_key = self
@@ -1055,24 +1057,9 @@ Now extract the data:[/INST]"#,
                     .api_key
                     .as_deref()
                     .ok_or_else(|| ScrapioError::Ai("API key not set".to_string()))?;
-                provider::call_anthropic(
-                    &client,
-                    &self.config,
-                    api_key,
-                    prompt,
-                    &schema_hint,
-                )
-                .await
+                provider::call_anthropic(&client, &self.config, api_key, prompt, &schema_hint).await
             }
-            "ollama" => {
-                provider::call_ollama(
-                    &client,
-                    &self.config,
-                    prompt,
-                    &schema_hint,
-                )
-                .await
-            }
+            "ollama" => provider::call_ollama(&client, &self.config, prompt, &schema_hint).await,
             _ => Err(ScrapioError::Ai(format!(
                 "Unknown provider: {}",
                 self.config.provider

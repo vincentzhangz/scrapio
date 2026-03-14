@@ -3,6 +3,7 @@ use scrapio_runtime::Runtime;
 
 mod commands;
 mod server;
+mod swagger;
 
 #[derive(Parser)]
 #[command(name = "scrapio")]
@@ -32,6 +33,8 @@ enum Commands {
         browser: bool,
         #[arg(long, default_value = "")]
         prompt: String,
+        #[arg(long, default_value = "10")]
+        max_steps: usize,
     },
     Crawl {
         url: String,
@@ -79,8 +82,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             model,
             browser,
             prompt,
+            max_steps,
         } => {
-            commands::handle_ai(&url, schema, &provider, &model, browser, &prompt);
+            commands::handle_ai(&url, schema, &provider, &model, browser, &prompt, max_steps);
         }
         Commands::Crawl { url, depth } => commands::handle_crawl(&url, depth),
         Commands::Save { url, database } => commands::handle_save(&url, &database),
