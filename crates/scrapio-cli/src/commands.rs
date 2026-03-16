@@ -41,6 +41,8 @@ pub struct AiScrapeOptions {
     pub max_steps: usize,
     pub headless: bool,
     pub verbose: bool,
+    pub output: String,
+    pub output_file: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -127,6 +129,8 @@ pub fn handle_ai(
     _driver_path: Option<&str>,
     headless: bool,
     verbose: bool,
+    output: &str,
+    output_file: Option<&str>,
 ) {
     let options = AiScrapeOptions {
         url: url.to_string(),
@@ -138,6 +142,8 @@ pub fn handle_ai(
         max_steps,
         headless,
         verbose,
+        output: output.to_string(),
+        output_file: output_file.map(|s| s.to_string()),
     };
 
     if options.use_browser {
@@ -148,11 +154,20 @@ pub fn handle_ai(
             options.schema,
             &options.provider,
             &options.model,
+            &options.output,
+            options.output_file.as_deref(),
         );
     }
 }
 
-fn handle_ai_http(url: &str, schema: Option<String>, provider: &str, model: &str) {
+fn handle_ai_http(
+    url: &str,
+    schema: Option<String>,
+    provider: &str,
+    model: &str,
+    output: &str,
+    output_file: Option<&str>,
+) {
     run_async(async {
         let mut config = scrapio_ai::AiConfig::new().with_provider(provider);
         if !model.is_empty() {
@@ -162,14 +177,51 @@ fn handle_ai_http(url: &str, schema: Option<String>, provider: &str, model: &str
         let schema = schema.unwrap_or_else(|| "{}".to_string());
         match scraper.scrape(url, &schema).await {
             Ok(result) => {
-                println!("URL: {}", result.url);
-                println!("Model: {}", result.model);
-                println!("Used fallback: {}", result.used_fallback);
-                println!("Links found: {}", result.links.len());
-                println!(
-                    "Data: {}",
-                    serde_json::to_string_pretty(&result.data).unwrap_or_default()
-                );
+                let output_content = match output.to_lowercase().as_str() {
+                    "json" => serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    "csv" => {
+                        // For CSV, output as key-value pairs
+                        let mut csv_output = String::new();
+                        csv_output.push_str("url,model,used_fallback,links_count\n");
+                        csv_output.push_str(&format!(
+                            "{},{},{},{}\n",
+                            result.url,
+                            result.model,
+                            result.used_fallback,
+                            result.links.len()
+                        ));
+                        // Also output data as separate rows
+                        if let Ok(data_json) = serde_json::to_string(&result.data) {
+                            csv_output.push_str("data\n");
+                            csv_output.push_str(&data_json);
+                        }
+                        csv_output
+                    }
+                    _ => {
+                        // Default text output
+                        let mut text_output = String::new();
+                        text_output.push_str(&format!("URL: {}\n", result.url));
+                        text_output.push_str(&format!("Model: {}\n", result.model));
+                        text_output.push_str(&format!("Used fallback: {}\n", result.used_fallback));
+                        text_output.push_str(&format!("Links found: {}\n", result.links.len()));
+                        text_output.push_str(&format!(
+                            "Data: {}",
+                            serde_json::to_string_pretty(&result.data).unwrap_or_default()
+                        ));
+                        text_output
+                    }
+                };
+
+                // Write to file or stdout
+                match output_file {
+                    Some(file_path) => match std::fs::write(file_path, &output_content) {
+                        Ok(_) => println!("Output saved to: {}", file_path),
+                        Err(e) => eprintln!("Error writing to file: {}", e),
+                    },
+                    None => {
+                        println!("{}", output_content);
+                    }
+                }
             }
             Err(e) => eprintln!("Error: {}", e),
         }
@@ -185,19 +237,6 @@ fn handle_ai_browser(options: AiScrapeOptions) {
 
         let scraper = BrowserAiScraper::with_config(config).with_max_steps(options.max_steps);
 
-        // Ralph loop is now the default for browser automation
-        println!("\nUsing Ralph loop for AI browser scraping...");
-        println!("URL: {}", options.url);
-        if !options.prompt.is_empty() {
-            println!("Objective: {}", options.prompt);
-        }
-        if let Some(ref schema) = options.schema {
-            println!("Schema: {}", schema);
-        }
-        println!("Max steps: {}", options.max_steps);
-        println!("Headless: {}", options.headless);
-        println!("Verbose: {}", options.verbose);
-
         let ralph_options = RalphLoopOptions {
             url: &options.url,
             schema: options.schema.as_deref().unwrap_or("[]"),
@@ -212,38 +251,96 @@ fn handle_ai_browser(options: AiScrapeOptions) {
 
         match scraper.ralph_loop(ralph_options).await {
             Ok(result) => {
-                println!("\n=== Ralph Loop Complete ===");
-                println!("Stop reason: {:?}", result.stop_reason);
-                println!("Iterations: {}", result.progress.iterations_completed);
-                println!("Total steps: {}", result.progress.steps_taken);
-                println!("\nExtraction results:");
-
-                for target in &result.progress.targets {
-                    let status = if target.extracted { "✓" } else { "✗" };
-                    println!("  {} {}: {}", status, target.id, target.description);
-                    if target.extracted {
-                        if let Some(data) = &target.data {
-                            println!(
-                                "      Data: {}",
-                                serde_json::to_string_pretty(data).unwrap_or_default()
-                            );
+                let output_content = match options.output.to_lowercase().as_str() {
+                    "json" => serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    "csv" => {
+                        // CSV output: one row per extracted target
+                        let mut wtr = csv::Writer::from_writer(vec![]);
+                        for target in &result.progress.targets {
+                            if target.extracted {
+                                wtr.serialize((
+                                    target.id.clone(),
+                                    target.description.clone(),
+                                    target
+                                        .data
+                                        .as_ref()
+                                        .map(|d| serde_json::to_string(d).unwrap_or_default()),
+                                    target.error.clone().unwrap_or_default(),
+                                ))
+                                .unwrap_or_default();
+                            }
                         }
-                    } else if let Some(error) = &target.error {
-                        println!("      Error: {}", error);
+                        let csv_data = wtr.into_inner().unwrap_or_default();
+                        String::from_utf8(csv_data).unwrap_or_default()
+                    }
+                    _ => {
+                        // Default text output
+                        let mut text_output = String::new();
+                        text_output.push_str("\nUsing Ralph loop for AI browser scraping...\n");
+                        text_output.push_str(&format!("URL: {}\n", options.url));
+                        if !options.prompt.is_empty() {
+                            text_output.push_str(&format!("Objective: {}\n", options.prompt));
+                        }
+                        if let Some(ref schema) = options.schema {
+                            text_output.push_str(&format!("Schema: {}\n", schema));
+                        }
+                        text_output.push_str(&format!("Max steps: {}\n", options.max_steps));
+                        text_output.push_str(&format!("Headless: {}\n", options.headless));
+                        text_output.push_str(&format!("Verbose: {}\n", options.verbose));
+
+                        text_output.push_str("\n=== Ralph Loop Complete ===\n");
+                        text_output.push_str(&format!("Stop reason: {:?}\n", result.stop_reason));
+                        text_output.push_str(&format!(
+                            "Iterations: {}\n",
+                            result.progress.iterations_completed
+                        ));
+                        text_output
+                            .push_str(&format!("Total steps: {}\n", result.progress.steps_taken));
+                        text_output.push_str("\nExtraction results:\n");
+
+                        for target in &result.progress.targets {
+                            let status = if target.extracted { "✓" } else { "✗" };
+                            text_output.push_str(&format!(
+                                "  {} {}: {}\n",
+                                status, target.id, target.description
+                            ));
+                            if target.extracted {
+                                if let Some(data) = &target.data {
+                                    text_output.push_str(&format!(
+                                        "      Data: {}\n",
+                                        serde_json::to_string_pretty(data).unwrap_or_default()
+                                    ));
+                                }
+                            } else if let Some(error) = &target.error {
+                                text_output.push_str(&format!("      Error: {}\n", error));
+                            }
+                        }
+
+                        let extracted = result
+                            .progress
+                            .targets
+                            .iter()
+                            .filter(|t| t.extracted)
+                            .count();
+                        text_output.push_str(&format!(
+                            "\nExtracted {}/{} targets",
+                            extracted,
+                            result.progress.targets.len()
+                        ));
+                        text_output
+                    }
+                };
+
+                // Write to file or stdout
+                match &options.output_file {
+                    Some(file_path) => match std::fs::write(file_path, &output_content) {
+                        Ok(_) => println!("Output saved to: {}", file_path),
+                        Err(e) => eprintln!("Error writing to file: {}", e),
+                    },
+                    None => {
+                        println!("{}", output_content);
                     }
                 }
-
-                let extracted = result
-                    .progress
-                    .targets
-                    .iter()
-                    .filter(|t| t.extracted)
-                    .count();
-                println!(
-                    "\nExtracted {}/{} targets",
-                    extracted,
-                    result.progress.targets.len()
-                );
             }
             Err(e) => eprintln!("Error: {}", e),
         }
@@ -313,16 +410,32 @@ pub fn handle_save(url: &str, database: &str) {
     });
 }
 
-pub fn handle_list(database: &str, limit: usize) {
+pub fn handle_list(database: &str, limit: usize, output: &str) {
     run_async(async {
         match Storage::new(database).await {
             Ok(storage) => match storage.get_all_results(limit).await {
                 Ok(results) => {
-                    println!("Found {} results:\n", results.len());
-                    for r in results {
-                        println!("  {} - {} - {}", r.id, r.status, r.url);
-                        if let Some(title) = &r.title {
-                            println!("    Title: {}", title);
+                    match output.to_lowercase().as_str() {
+                        "json" => {
+                            let json = serde_json::to_string_pretty(&results).unwrap_or_default();
+                            println!("{}", json);
+                        }
+                        "csv" => {
+                            let mut wtr = csv::Writer::from_writer(std::io::stdout());
+                            for r in &results {
+                                wtr.serialize(r).unwrap_or_default();
+                            }
+                            wtr.flush().unwrap_or_default();
+                        }
+                        _ => {
+                            // Default text output
+                            println!("Found {} results:\n", results.len());
+                            for r in results {
+                                println!("  {} - {} - {}", r.id, r.status, r.url);
+                                if let Some(title) = &r.title {
+                                    println!("    Title: {}", title);
+                                }
+                            }
                         }
                     }
                 }

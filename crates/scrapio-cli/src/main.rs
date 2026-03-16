@@ -41,6 +41,10 @@ enum Commands {
         headless: bool,
         #[arg(long, short)]
         verbose: bool,
+        #[arg(long, default_value = "text")]
+        output: String,
+        #[arg(long)]
+        output_file: Option<String>,
     },
     Crawl {
         url: String,
@@ -57,6 +61,8 @@ enum Commands {
         database: String,
         #[arg(long, default_value = "10")]
         limit: usize,
+        #[arg(long, default_value = "text")]
+        output: String,
     },
     Serve {
         #[arg(long, default_value = "127.0.0.1")]
@@ -94,6 +100,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             driver_path,
             headless,
             verbose,
+            output,
+            output_file,
         } => {
             commands::handle_ai(
                 &url,
@@ -106,11 +114,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 driver_path.as_deref(),
                 headless,
                 verbose,
+                &output,
+                output_file.as_deref(),
             );
         }
         Commands::Crawl { url, depth } => commands::handle_crawl(&url, depth),
         Commands::Save { url, database } => commands::handle_save(&url, &database),
-        Commands::List { database, limit } => commands::handle_list(&database, limit),
+        Commands::List {
+            database,
+            limit,
+            output,
+        } => commands::handle_list(&database, limit, &output),
         Commands::Serve { host, port } => {
             let runtime = scrapio_runtime::TokioRuntime::default();
             if let Err(e) = runtime.block_on(async { server::serve_api_server(host, port).await }) {

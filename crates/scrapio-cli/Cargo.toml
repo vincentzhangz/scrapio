@@ -24,6 +24,7 @@ scrapio-runtime = { path = "../scrapio-runtime" }
 scrapio-storage = { path = "../scrapio-storage" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+csv = "1"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tracing = "0.1"
