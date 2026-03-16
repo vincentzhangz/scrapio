@@ -858,12 +858,8 @@ mod tests {
     #[test]
     fn test_stealth_patching_default() {
         let manager = ChromeDriverManager::new();
-        // On macOS, patching is disabled by default due to security policies
-        // On other platforms, it's enabled
-        #[cfg(target_os = "macos")]
+        // Stealth patching is disabled by default - causes issues on macOS
         assert!(!manager.patch_stealth);
-        #[cfg(not(target_os = "macos"))]
-        assert!(manager.patch_stealth);
     }
 
     #[test]
