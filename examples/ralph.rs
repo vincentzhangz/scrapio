@@ -71,7 +71,12 @@ async fn main() {
             }
 
             println!("\n=== Summary ===");
-            let extracted = result.progress.targets.iter().filter(|t| t.extracted).count();
+            let extracted = result
+                .progress
+                .targets
+                .iter()
+                .filter(|t| t.extracted)
+                .count();
             let total = result.progress.targets.len();
             println!("Extracted: {}/{} targets", extracted, total);
 

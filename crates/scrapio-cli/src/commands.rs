@@ -223,15 +223,27 @@ fn handle_ai_browser(options: AiScrapeOptions) {
                     println!("  {} {}: {}", status, target.id, target.description);
                     if target.extracted {
                         if let Some(data) = &target.data {
-                            println!("      Data: {}", serde_json::to_string_pretty(data).unwrap_or_default());
+                            println!(
+                                "      Data: {}",
+                                serde_json::to_string_pretty(data).unwrap_or_default()
+                            );
                         }
                     } else if let Some(error) = &target.error {
                         println!("      Error: {}", error);
                     }
                 }
 
-                let extracted = result.progress.targets.iter().filter(|t| t.extracted).count();
-                println!("\nExtracted {}/{} targets", extracted, result.progress.targets.len());
+                let extracted = result
+                    .progress
+                    .targets
+                    .iter()
+                    .filter(|t| t.extracted)
+                    .count();
+                println!(
+                    "\nExtracted {}/{} targets",
+                    extracted,
+                    result.progress.targets.len()
+                );
             }
             Err(e) => eprintln!("Error: {}", e),
         }
@@ -336,7 +348,8 @@ pub fn handle_browser(
             None => return,
         };
 
-        let mut browser = match init_browser(&driver.webdriver_url(), headless, stealth_level).await {
+        let mut browser = match init_browser(&driver.webdriver_url(), headless, stealth_level).await
+        {
             Some(b) => b,
             None => return,
         };

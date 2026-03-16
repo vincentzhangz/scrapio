@@ -113,9 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::List { database, limit } => commands::handle_list(&database, limit),
         Commands::Serve { host, port } => {
             let runtime = scrapio_runtime::TokioRuntime::default();
-            if let Err(e) = runtime.block_on(async {
-                server::serve_api_server(host, port).await
-            }) {
+            if let Err(e) = runtime.block_on(async { server::serve_api_server(host, port).await }) {
                 eprintln!("Server error: {}", e);
             }
         }

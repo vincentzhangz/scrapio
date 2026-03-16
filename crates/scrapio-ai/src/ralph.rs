@@ -114,24 +114,34 @@ impl RalphProgress {
         let targets = match parsed {
             Ok(t) => t,
             Err(_) => {
-                let obj: Value = serde_json::from_str(schema)
-                    .map_err(|e| ScrapioError::Parse(e.to_string()))?;
+                let obj: Value =
+                    serde_json::from_str(schema).map_err(|e| ScrapioError::Parse(e.to_string()))?;
 
-                if let Some(items) = obj.get("items").or_else(|| obj.get("properties")).and_then(|v| v.as_array()) {
-                    items.iter().enumerate().map(|(i, item)| {
-                        let id = item.get("id")
-                            .or_else(|| item.get("name"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(&format!("item_{}", i))
-                            .to_string();
-                        let description = item.get("description")
-                            .or_else(|| item.get("title"))
-                            .or_else(|| item.get("type"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("Extract data")
-                            .to_string();
-                        RalphTarget::new(id, description)
-                    }).collect()
+                if let Some(items) = obj
+                    .get("items")
+                    .or_else(|| obj.get("properties"))
+                    .and_then(|v| v.as_array())
+                {
+                    items
+                        .iter()
+                        .enumerate()
+                        .map(|(i, item)| {
+                            let id = item
+                                .get("id")
+                                .or_else(|| item.get("name"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(&format!("item_{}", i))
+                                .to_string();
+                            let description = item
+                                .get("description")
+                                .or_else(|| item.get("title"))
+                                .or_else(|| item.get("type"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("Extract data")
+                                .to_string();
+                            RalphTarget::new(id, description)
+                        })
+                        .collect()
                 } else {
                     vec![RalphTarget::new("default", schema)]
                 }
@@ -189,9 +199,9 @@ impl BrowserAiScraper {
     ) -> Result<RalphResult, ScrapioError> {
         use scrapio_browser::{ChromeDriverSession, StealthBrowser};
 
-        let driver = ChromeDriverSession::start().await.map_err(|e| {
-            ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
-        })?;
+        let driver = ChromeDriverSession::start()
+            .await
+            .map_err(|e| ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e)))?;
 
         let webdriver_url = driver.webdriver_url();
 
@@ -202,9 +212,10 @@ impl BrowserAiScraper {
             .headless(options.headless)
             .stealth(stealth_config);
 
-        let mut browser = builder.init().await.map_err(|e| {
-            ScrapioError::Browser(e.to_string())
-        })?;
+        let mut browser = builder
+            .init()
+            .await
+            .map_err(|e| ScrapioError::Browser(e.to_string()))?;
 
         let result = self.run_ralph_loop(&mut browser, options).await;
 
@@ -220,12 +231,15 @@ impl BrowserAiScraper {
         options: RalphLoopOptions<'_>,
     ) -> Result<RalphResult, ScrapioError> {
         // If custom_prompt is provided and schema is empty or "[]", treat prompt as the target
-        let schema = if (options.schema.is_empty() || options.schema == "[]") && !options.custom_prompt.is_empty() {
+        let schema = if (options.schema.is_empty() || options.schema == "[]")
+            && !options.custom_prompt.is_empty()
+        {
             // Create single target from prompt
             serde_json::json!([{
                 "id": "objective",
                 "description": options.custom_prompt
-            }]).to_string()
+            }])
+            .to_string()
         } else {
             options.schema.to_string()
         };
@@ -275,7 +289,10 @@ impl BrowserAiScraper {
             progress.current_target = Some(target_id.clone());
 
             if verbose {
-                println!("\n[Iteration {}/{}] Target: {} - {}", iteration, max_iterations, target_id, target_description);
+                println!(
+                    "\n[Iteration {}/{}] Target: {} - {}",
+                    iteration, max_iterations, target_id, target_description
+                );
             } else {
                 tracing::info!(
                     "Ralph iteration {}/{}: extracting target '{}'",
@@ -293,27 +310,41 @@ impl BrowserAiScraper {
                         "description": target_description.clone()
                     }
                 }
-            }).to_string();
+            })
+            .to_string();
 
-            let step_result = self.run_ralph_iteration(
-                browser,
-                &target_schema,
-                options.custom_prompt,
-                max_steps,
-                options.verbose,
-            ).await;
+            let step_result = self
+                .run_ralph_iteration(
+                    browser,
+                    &target_schema,
+                    options.custom_prompt,
+                    max_steps,
+                    options.verbose,
+                )
+                .await;
 
             match step_result {
                 Ok(result) => {
-                    total_steps += result.get("steps_taken").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                    total_steps += result
+                        .get("steps_taken")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize;
 
-                    if let Some(data) = result.get("data").or_else(|| result.get("extracted_data")) {
+                    if let Some(data) = result.get("data").or_else(|| result.get("extracted_data"))
+                    {
                         progress.mark_extracted(&target_id, data.clone());
                         tracing::info!("Successfully extracted target: {}", target_id);
-                    } else if let Some(data) = result.get("extracted_data").and_then(|v| v.as_array()).and_then(|arr| arr.last()) {
+                    } else if let Some(data) = result
+                        .get("extracted_data")
+                        .and_then(|v| v.as_array())
+                        .and_then(|arr| arr.last())
+                    {
                         progress.mark_extracted(&target_id, data.clone());
                     } else {
-                        let error_msg = result.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+                        let error_msg = result
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown error");
                         progress.mark_failed(&target_id, error_msg);
                         tracing::warn!("Failed to extract target '{}': {}", target_id, error_msg);
                     }
@@ -350,11 +381,18 @@ impl BrowserAiScraper {
 
         let message = match stop_reason {
             RalphStopReason::AllTargetsExtracted => {
-                format!("Successfully extracted all {} targets", progress.targets.len())
+                format!(
+                    "Successfully extracted all {} targets",
+                    progress.targets.len()
+                )
             }
             RalphStopReason::MaxIterationsReached => {
                 let extracted = progress.targets.iter().filter(|t| t.extracted).count();
-                format!("Max iterations reached. Extracted {}/{} targets", extracted, progress.targets.len())
+                format!(
+                    "Max iterations reached. Extracted {}/{} targets",
+                    extracted,
+                    progress.targets.len()
+                )
             }
             RalphStopReason::NoMoreTargets => "No more pending targets".to_string(),
             RalphStopReason::Error => "Error occurred during extraction".to_string(),
@@ -386,7 +424,9 @@ impl BrowserAiScraper {
 
         // Refresh state
         self.refresh_state(browser, &mut state).await?;
-        state.action_history.push(format!("goto: {}", state.current_url));
+        state
+            .action_history
+            .push(format!("goto: {}", state.current_url));
 
         if verbose {
             println!("  → Step 1: Navigated to {}", state.current_url);
@@ -405,14 +445,22 @@ impl BrowserAiScraper {
 
             let snapshot = self.get_page_snapshot(browser, &state).await?;
 
-            let action = self.decide_action(&snapshot, schema, &state.action_history, custom_prompt).await?;
+            let action = self
+                .decide_action(&snapshot, schema, &state.action_history, custom_prompt)
+                .await?;
 
             if verbose {
                 let action_desc = match &action {
                     BrowserAction::Goto { url } => format!("goto({})", url),
                     BrowserAction::Click { selector } => format!("click({})", selector),
-                    BrowserAction::ClickElement { element_id } => format!("click_element({})", element_id),
-                    BrowserAction::TypeInto { element_id, text } => format!("type({}, \"{}\")", element_id, text.chars().take(20).collect::<String>()),
+                    BrowserAction::ClickElement { element_id } => {
+                        format!("click_element({})", element_id)
+                    }
+                    BrowserAction::TypeInto { element_id, text } => format!(
+                        "type({}, \"{}\")",
+                        element_id,
+                        text.chars().take(20).collect::<String>()
+                    ),
                     BrowserAction::Scroll { pixels } => format!("scroll({})", pixels),
                     BrowserAction::ScrollToBottom => "scroll_to_bottom()".to_string(),
                     BrowserAction::Wait { duration_ms } => format!("wait({}ms)", duration_ms),
@@ -420,13 +468,20 @@ impl BrowserAiScraper {
                     BrowserAction::Extract => "extract()".to_string(),
                     BrowserAction::Finish => "finish()".to_string(),
                     BrowserAction::Screenshot => "screenshot()".to_string(),
-                    BrowserAction::FindElements { selector } => format!("find_elements({})", selector),
-                    BrowserAction::ExecuteScript { script } => format!("execute_script({})", script.chars().take(30).collect::<String>()),
+                    BrowserAction::FindElements { selector } => {
+                        format!("find_elements({})", selector)
+                    }
+                    BrowserAction::ExecuteScript { script } => format!(
+                        "execute_script({})",
+                        script.chars().take(30).collect::<String>()
+                    ),
                 };
                 println!("  → Step {}: {}", step, action_desc);
             }
 
-            let result = self.execute_action(browser, &action, &mut state, schema, custom_prompt).await?;
+            let result = self
+                .execute_action(browser, &action, &mut state, schema, custom_prompt)
+                .await?;
 
             match result {
                 ActionResult::Success { data: _, message } => {
@@ -441,7 +496,10 @@ impl BrowserAiScraper {
                 ActionResult::Error { message } => {
                     state.record_failure(&action.to_history_string(), "", &message);
                     if verbose {
-                        println!("      └─ Error: {}", message.chars().take(80).collect::<String>());
+                        println!(
+                            "      └─ Error: {}",
+                            message.chars().take(80).collect::<String>()
+                        );
                     }
                 }
                 ActionResult::Done { data } => {

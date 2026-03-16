@@ -604,7 +604,10 @@ impl BrowserAiScraper {
                 .await?;
 
             match result {
-                ActionResult::Success { data: _, message: _ } => {
+                ActionResult::Success {
+                    data: _,
+                    message: _,
+                } => {
                     state.record_success();
                     // If action needs refresh, update state
                     if action.needs_refresh() {
