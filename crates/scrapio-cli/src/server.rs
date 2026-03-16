@@ -11,11 +11,11 @@ use scrapio_storage::Storage;
 
 pub use crate::swagger::{create_swagger_router, get_result, get_results, health, scrape};
 
-pub async fn serve_api_server(host: String, port: u16) {
+pub async fn serve_api_server(host: String, port: u16) -> Result<(), Box<dyn std::error::Error>> {
     let storage = Arc::new(
         Storage::new(":memory:")
             .await
-            .expect("Failed to create storage"),
+            .map_err(|e| format!("Failed to create storage: {}", e))?,
     );
 
     let app = Router::new()
@@ -34,6 +34,12 @@ pub async fn serve_api_server(host: String, port: u16) {
     println!();
     println!("Server running at http://{}", addr);
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("Failed to bind to {}: {}", addr, e))?;
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| format!("Server error: {}", e))?;
+
+    Ok(())
 }

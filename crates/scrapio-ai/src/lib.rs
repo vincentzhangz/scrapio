@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use scrapio_core::{
-    DEFAULT_TIMEOUT, DEFAULT_USER_AGENT,
     error::{ScrapioError, ScrapioResult},
+    http::HttpClient,
 };
 
 pub mod config;
@@ -18,10 +18,16 @@ pub mod provider;
 #[cfg(feature = "browser")]
 pub mod browser_agent;
 
+#[cfg(feature = "browser")]
+pub mod ralph;
+
 pub use config::AiConfig;
 
 #[cfg(feature = "browser")]
 pub use browser_agent::{ActionResult, AgentState, BrowserAction, BrowserAiScraper};
+
+#[cfg(feature = "browser")]
+pub use ralph::{RalphLoopOptions, RalphProgress, RalphResult, RalphStopReason, RalphTarget};
 
 /// Result from AI extraction
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,28 +49,20 @@ pub struct AiExtractionResult {
 /// AI Scraper for intelligent content extraction
 pub struct AiScraper {
     config: AiConfig,
-    client: reqwest::Client,
-}
-
-fn build_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .user_agent(DEFAULT_USER_AGENT)
-        .timeout(DEFAULT_TIMEOUT)
-        .build()
-        .expect("Failed to create HTTP client")
+    http: HttpClient,
 }
 
 impl AiScraper {
     pub fn new() -> Self {
         Self {
             config: AiConfig::new(),
-            client: build_client(),
+            http: HttpClient::new(),
         }
     }
 
     pub fn with_config(config: AiConfig) -> Self {
         Self {
-            client: build_client(),
+            http: HttpClient::new(),
             config,
         }
     }
@@ -85,7 +83,7 @@ impl AiScraper {
             return Err(ScrapioError::Parse(format!("Invalid URL: {}", url)));
         }
 
-        let html = self.client.get(url).send().await?.text().await?;
+        let html = self.http.client().get(url).send().await?.text().await?;
         let text_content = extraction::strip_html(&html);
 
         let result = self

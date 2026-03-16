@@ -2,6 +2,7 @@
 
 use scrapio_ai::AiScraper;
 use scrapio_ai::BrowserAiScraper;
+use scrapio_ai::RalphLoopOptions;
 use scrapio_browser::{
     ChromeDriverManager, ChromeDriverSession, StealthBrowser, StealthConfig, StealthLevel,
 };
@@ -38,10 +39,82 @@ pub struct AiScrapeOptions {
     pub use_browser: bool,
     pub prompt: String,
     pub max_steps: usize,
-    pub driver_path: Option<String>,
     pub headless: bool,
+    pub verbose: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
+fn parse_stealth_level(stealth: Option<&str>) -> StealthLevel {
+    match stealth {
+        Some("basic") => StealthLevel::Basic,
+        Some("advanced") => StealthLevel::Advanced,
+        Some("full") | Some(_) => StealthLevel::Full,
+        None => StealthLevel::None,
+    }
+}
+
+async fn start_driver(driver_path: Option<&str>) -> Option<ChromeDriverSession> {
+    let result = if let Some(path) = driver_path {
+        ChromeDriverSession::start_with(ChromeDriverManager::new().with_path(path.into())).await
+    } else {
+        ChromeDriverSession::start().await
+    };
+
+    match result {
+        Ok(driver) => Some(driver),
+        Err(e) => {
+            eprintln!("Failed to start ChromeDriver: {}", e);
+            None
+        }
+    }
+}
+
+async fn init_browser(
+    driver_url: &str,
+    headless: bool,
+    stealth_level: StealthLevel,
+) -> Option<StealthBrowser> {
+    let mut builder = StealthBrowser::with_webdriver(driver_url).headless(headless);
+
+    if stealth_level != StealthLevel::None {
+        let config = StealthConfig::new(stealth_level);
+        builder = builder.stealth(config);
+    }
+
+    match builder.init().await {
+        Ok(browser) => Some(browser),
+        Err(e) => {
+            eprintln!("Failed to initialize browser: {}", e);
+            None
+        }
+    }
+}
+
+async fn print_page_info(browser: &mut StealthBrowser) {
+    match browser.title().await {
+        Ok(title) => println!("Page title: {}", title),
+        Err(e) => eprintln!("Failed to get title: {}", e),
+    }
+
+    match browser.url().await {
+        Ok(current_url) => println!("Current URL: {}", current_url),
+        Err(e) => eprintln!("Failed to get URL: {}", e),
+    }
+
+    match browser.html().await {
+        Ok(html) => {
+            let preview = if html.len() > 500 {
+                format!("{}...", &html[..500])
+            } else {
+                html
+            };
+            println!("Page HTML preview:\n{}", preview);
+        }
+        Err(e) => eprintln!("Failed to get HTML: {}", e),
+    }
+}
+
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub fn handle_ai(
     url: &str,
@@ -51,8 +124,9 @@ pub fn handle_ai(
     use_browser: bool,
     prompt: &str,
     max_steps: usize,
-    driver_path: Option<&str>,
+    _driver_path: Option<&str>,
     headless: bool,
+    verbose: bool,
 ) {
     let options = AiScrapeOptions {
         url: url.to_string(),
@@ -62,8 +136,8 @@ pub fn handle_ai(
         use_browser,
         prompt: prompt.to_string(),
         max_steps,
-        driver_path: driver_path.map(|s| s.to_string()),
         headless,
+        verbose,
     };
 
     if options.use_browser {
@@ -110,36 +184,54 @@ fn handle_ai_browser(options: AiScrapeOptions) {
         }
 
         let scraper = BrowserAiScraper::with_config(config).with_max_steps(options.max_steps);
-        let schema = options.schema.unwrap_or_else(|| "{}".to_string());
 
-        println!("\nUsing browser automation for AI scraping...");
+        // Ralph loop is now the default for browser automation
+        println!("\nUsing Ralph loop for AI browser scraping...");
         println!("URL: {}", options.url);
         if !options.prompt.is_empty() {
-            println!("Prompt: {}", options.prompt);
+            println!("Objective: {}", options.prompt);
         }
-        println!("Schema: {}", schema);
+        if let Some(ref schema) = options.schema {
+            println!("Schema: {}", schema);
+        }
         println!("Max steps: {}", options.max_steps);
         println!("Headless: {}", options.headless);
+        println!("Verbose: {}", options.verbose);
 
-        let result = scraper
-            .scrape_with_managed_browser(
-                &options.url,
-                &schema,
-                &options.prompt,
-                options.driver_path.as_deref(),
-                options.headless,
-            )
-            .await;
+        let ralph_options = RalphLoopOptions {
+            url: &options.url,
+            schema: options.schema.as_deref().unwrap_or("[]"),
+            custom_prompt: &options.prompt,
+            max_iterations: None,
+            max_steps_per_iteration: Some(options.max_steps),
+            stealth_level: Some(StealthLevel::Basic),
+            webdriver_url: None,
+            headless: options.headless,
+            verbose: options.verbose,
+        };
 
-        match result {
+        match scraper.ralph_loop(ralph_options).await {
             Ok(result) => {
-                println!("\n--- Result ---");
-                println!("URL: {}", result.url);
-                println!("Model: {}", result.model);
-                println!(
-                    "Data: {}",
-                    serde_json::to_string_pretty(&result.data).unwrap_or_default()
-                );
+                println!("\n=== Ralph Loop Complete ===");
+                println!("Stop reason: {:?}", result.stop_reason);
+                println!("Iterations: {}", result.progress.iterations_completed);
+                println!("Total steps: {}", result.progress.steps_taken);
+                println!("\nExtraction results:");
+
+                for target in &result.progress.targets {
+                    let status = if target.extracted { "✓" } else { "✗" };
+                    println!("  {} {}: {}", status, target.id, target.description);
+                    if target.extracted {
+                        if let Some(data) = &target.data {
+                            println!("      Data: {}", serde_json::to_string_pretty(data).unwrap_or_default());
+                        }
+                    } else if let Some(error) = &target.error {
+                        println!("      Error: {}", error);
+                    }
+                }
+
+                let extracted = result.progress.targets.iter().filter(|t| t.extracted).count();
+                println!("\nExtracted {}/{} targets", extracted, result.progress.targets.len());
             }
             Err(e) => eprintln!("Error: {}", e),
         }
@@ -237,52 +329,16 @@ pub fn handle_browser(
     driver_path: Option<&str>,
 ) {
     run_async(async {
-        // Determine stealth level
-        let stealth_level = match stealth {
-            Some("basic") => StealthLevel::Basic,
-            Some("advanced") => StealthLevel::Advanced,
-            Some("full") | Some(_) => StealthLevel::Full,
-            None => StealthLevel::None,
+        let stealth_level = parse_stealth_level(stealth);
+
+        let driver = match start_driver(driver_path).await {
+            Some(d) => d,
+            None => return,
         };
 
-        // Create ChromeDriverSession with custom path if provided
-        let driver = if let Some(path) = driver_path {
-            match ChromeDriverSession::start_with(ChromeDriverManager::new().with_path(path.into()))
-                .await
-            {
-                Ok(driver) => driver,
-                Err(e) => {
-                    eprintln!("Failed to start ChromeDriver: {}", e);
-                    return;
-                }
-            }
-        } else {
-            match ChromeDriverSession::start().await {
-                Ok(driver) => driver,
-                Err(e) => {
-                    eprintln!("Failed to start ChromeDriver: {}", e);
-                    return;
-                }
-            }
-        };
-
-        // Build browser config
-        let mut builder = StealthBrowser::with_webdriver(driver.webdriver_url()).headless(headless);
-
-        if stealth_level != StealthLevel::None {
-            let config = StealthConfig::new(stealth_level);
-            builder = builder.stealth(config);
-        }
-
-        // Execute custom script if provided
-        let custom_script = script.and_then(|s| std::fs::read_to_string(s).ok());
-
-        let mut browser = match builder.init().await {
-            Ok(b) => b,
-            Err(e) => {
-                eprintln!("Failed to initialize browser: {}", e);
-                return;
-            }
+        let mut browser = match init_browser(&driver.webdriver_url(), headless, stealth_level).await {
+            Some(b) => b,
+            None => return,
         };
 
         // Navigate to URL
@@ -298,40 +354,17 @@ pub fn handle_browser(
         }
 
         // Execute custom script if provided
-        if let Some(ref script_content) = custom_script {
-            match browser.execute_script(script_content).await {
-                Ok(result) => {
-                    println!("Script result: {}", result);
-                }
-                Err(e) => {
-                    eprintln!("Script execution failed: {}", e);
-                }
+        if let Some(script_path) = script
+            && let Ok(script_content) = std::fs::read_to_string(script_path)
+        {
+            match browser.execute_script(&script_content).await {
+                Ok(result) => println!("Script result: {}", result),
+                Err(e) => eprintln!("Script execution failed: {}", e),
             }
         }
 
-        // Get page info
-        match browser.title().await {
-            Ok(title) => println!("Page title: {}", title),
-            Err(e) => eprintln!("Failed to get title: {}", e),
-        }
-
-        match browser.url().await {
-            Ok(current_url) => println!("Current URL: {}", current_url),
-            Err(e) => eprintln!("Failed to get URL: {}", e),
-        }
-
-        // Get page source
-        match browser.html().await {
-            Ok(html) => {
-                let preview = if html.len() > 500 {
-                    format!("{}...", &html[..500])
-                } else {
-                    html
-                };
-                println!("Page HTML preview:\n{}", preview);
-            }
-            Err(e) => eprintln!("Failed to get HTML: {}", e),
-        }
+        // Print page info
+        print_page_info(&mut browser).await;
 
         // Close browser
         if let Err(e) = browser.close().await {

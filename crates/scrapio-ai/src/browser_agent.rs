@@ -471,7 +471,6 @@ impl BrowserAiScraper {
         self.scrape_with_webdriver(options).await
     }
 
-    /// Scrape with additional options
     pub async fn scrape_with_options(
         &self,
         url: &str,
@@ -605,11 +604,8 @@ impl BrowserAiScraper {
                 .await?;
 
             match result {
-                ActionResult::Success { data: _, message } => {
+                ActionResult::Success { data: _, message: _ } => {
                     state.record_success();
-                    if let Some(msg) = message {
-                        tracing::info!("Action result: {}", msg);
-                    }
                     // If action needs refresh, update state
                     if action.needs_refresh() {
                         self.refresh_state(browser, &mut state).await?;
@@ -654,7 +650,7 @@ impl BrowserAiScraper {
     }
 
     /// Refresh browser state
-    async fn refresh_state(
+    pub(crate) async fn refresh_state(
         &self,
         browser: &mut StealthBrowser,
         state: &mut AgentState,
@@ -666,7 +662,7 @@ impl BrowserAiScraper {
     }
 
     /// Get page snapshot with interactable elements
-    async fn get_page_snapshot(
+    pub(crate) async fn get_page_snapshot(
         &self,
         browser: &mut StealthBrowser,
         state: &AgentState,
@@ -731,7 +727,7 @@ impl BrowserAiScraper {
     }
 
     /// Ask AI to decide the next action based on current snapshot
-    async fn decide_action(
+    pub(crate) async fn decide_action(
         &self,
         snapshot: &PageSnapshot,
         schema: &str,
@@ -848,7 +844,7 @@ Decide what to do next and respond with ONLY the JSON object."#,
     }
 
     /// Execute an action and return the result
-    async fn execute_action(
+    pub(crate) async fn execute_action(
         &self,
         browser: &mut StealthBrowser,
         action: &BrowserAction,

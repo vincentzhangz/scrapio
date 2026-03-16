@@ -1,0 +1,5 @@
+[
+  {"id": "title", "description": "Extract the page title"},
+  {"id": "heading", "description": "Extract the main heading (h1)"},
+  {"id": "links_count", "description": "Count the number of links on the page"}
+]

@@ -10,6 +10,7 @@ cargo run --example ai
 cargo run --example spider
 cargo run --example browser
 cargo run --example browser_complex
+cargo run --example ralph
 ```
 
 Or run from the examples directory:
@@ -20,6 +21,7 @@ cargo run -p scrapio-examples --bin ai
 cargo run -p scrapio-examples --bin spider
 cargo run -p scrapio-examples --bin browser
 cargo run -p scrapio-examples --bin browser_complex
+cargo run -p scrapio-examples --bin ralph
 ```
 
 ## Examples
@@ -38,3 +40,6 @@ Browser automation with stealth mode using WebDriver. Uses ChromeDriverManager t
 
 ### browser_complex
 More advanced browser automation example demonstrating click, scroll, and screenshot interactions.
+
+### ralph
+Ralph loop example - iterates through multiple extraction targets until all are completed. Inspired by the Ralph agent pattern. Uses AI to navigate and extract different elements from the page in sequence.

@@ -65,16 +65,19 @@ scrapio ai https://www.rust-lang.org --browser --model gpt-4o
 
 # With custom prompt to guide the AI
 scrapio ai https://www.rust-lang.org --browser --prompt "Find and extract all the installation commands for different operating systems"
+
+# With custom schema for structured extraction
+scrapio ai https://www.rust-lang.org --browser --schema '[{"id":"title","description":"Extract page title"}]'
 ```
 
 #### AI Browser Mode
 
-When using `--browser`, the AI uses an agentic approach to navigate and interact with pages:
+When using `--browser`, the AI uses the Ralph loop pattern to navigate and interact with pages:
 
 1. Opens a headless browser and navigates to the URL
 2. Analyzes the page content using the LLM
 3. Decides on next actions (click, scroll, navigate, extract)
-4. Repeats until data is extracted or max steps reached
+4. Repeats until the objective is complete or max steps reached
 
 This is useful for:
 - JavaScript-rendered pages
@@ -83,6 +86,26 @@ This is useful for:
 - Dynamic content that requires user interaction
 
 The browser runs in stealth mode to avoid detection.
+
+The Ralph loop:
+- **With prompt only**: The prompt becomes the extraction target. The loop continues until the objective is achieved or max iterations reached.
+- **With schema**: Iterates through each schema target until all are extracted.
+
+```bash
+# Ralph loop with prompt (no schema needed)
+scrapio ai https://www.rust-lang.org --browser --prompt "get the main heading"
+
+# Ralph loop with schema for multiple targets
+scrapio ai https://www.rust-lang.org --browser --schema '[{"id":"title","description":"Get title"},{"id":"links","description":"Get all links"}]'
+
+# Ralph loop with custom iterations and steps
+scrapio ai https://www.rust-lang.org --browser --prompt "extract install commands" --max-steps 20
+```
+
+The Ralph loop is useful for:
+- Complex multi-step tasks that require iteration
+- When the objective is not achieved in a single pass
+- Extracting multiple items from a page
 
 ### Using AI with Ollama (Local Models)
 
@@ -449,10 +472,13 @@ scrapio classic <URL>
 scrapio ai <URL> [OPTIONS]
 
 Options:
-  --schema <SCHEMA>      JSON schema for extraction
-  --provider <PROVIDER>  LLM provider: openai, anthropic, ollama (default: openai)
-  --browser              Use browser automation for JavaScript-rendered pages
-  --prompt <PROMPT>      Custom prompt/objective for the AI (used with --browser)
+  --schema <SCHEMA>       JSON schema for extraction
+  --provider <PROVIDER>   LLM provider: openai, anthropic, ollama (default: openai)
+  --browser               Use browser automation for JavaScript-rendered pages (uses Ralph loop)
+  --prompt <PROMPT>       Custom prompt/objective for the AI
+  --max-steps <STEPS>     Max steps for browser automation (default: 10)
+  --headless <HEADLESS>  Run browser headless (default: true)
+  -v, --verbose           Show step-by-step progress during browser automation
 ```
 
 ### Crawl Command

@@ -39,6 +39,8 @@ enum Commands {
         driver_path: Option<String>,
         #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
         headless: bool,
+        #[arg(long, short)]
+        verbose: bool,
     },
     Crawl {
         url: String,
@@ -91,6 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_steps,
             driver_path,
             headless,
+            verbose,
         } => {
             commands::handle_ai(
                 &url,
@@ -102,6 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 max_steps,
                 driver_path.as_deref(),
                 headless,
+                verbose,
             );
         }
         Commands::Crawl { url, depth } => commands::handle_crawl(&url, depth),
@@ -109,9 +113,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::List { database, limit } => commands::handle_list(&database, limit),
         Commands::Serve { host, port } => {
             let runtime = scrapio_runtime::TokioRuntime::default();
-            runtime.block_on(async {
-                server::serve_api_server(host, port).await;
-            });
+            if let Err(e) = runtime.block_on(async {
+                server::serve_api_server(host, port).await
+            }) {
+                eprintln!("Server error: {}", e);
+            }
         }
         Commands::Browser {
             url,

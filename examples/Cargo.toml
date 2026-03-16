@@ -24,8 +24,12 @@ path = "browser.rs"
 name = "browser_complex"
 path = "browser_complex.rs"
 
+[[bin]]
+name = "ralph"
+path = "ralph.rs"
+
 [dependencies]
-scrapio-ai = { path = "../crates/scrapio-ai" }
+scrapio-ai = { path = "../crates/scrapio-ai", features = ["browser"] }
 scrapio-browser = { path = "../crates/scrapio-browser" }
 scrapio-classic = { path = "../crates/scrapio-classic" }
 scrapio-core = { path = "../crates/scrapio-core" }
