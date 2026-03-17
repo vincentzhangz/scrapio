@@ -521,8 +521,12 @@ impl BrowserAiScraper {
                 None
             },
             links: Vec::new(),
-            used_fallback: false,
             model: self.config.model.clone(),
+            mode: super::ExtractionMode::Ai,
+            fallback_reason: None,
+            provider_error: None,
+            schema_validation_passed: true,
+            confidence: None,
         })
     }
 
@@ -665,6 +669,7 @@ impl BrowserAiScraper {
     }
 
     /// Get page snapshot with interactable elements
+    /// Uses JavaScript to query the real DOM for grounded element references
     pub(crate) async fn get_page_snapshot(
         &self,
         browser: &mut StealthBrowser,
@@ -672,14 +677,130 @@ impl BrowserAiScraper {
     ) -> Result<PageSnapshot, ScrapioError> {
         let url = browser.url().await.unwrap_or_default();
         let title = browser.title().await.unwrap_or_default();
-        let html = browser.html().await.unwrap_or_default();
 
-        Ok(PageSnapshot::from_html(
-            &url,
-            &title,
-            &html,
-            &state.failures,
-        ))
+        // Try to get elements via JavaScript from real DOM
+        let js_result = Self::get_browser_elements(browser).await;
+
+        let elements = match js_result {
+            Ok(elems) => elems,
+            Err(e) => {
+                // Fallback to HTML parsing if JS execution fails
+                tracing::warn!("JS element extraction failed, falling back to HTML parsing: {}", e);
+                let html = browser.html().await.unwrap_or_default();
+                extract_interactable_elements(&html)
+            }
+        };
+
+        // Get visible text for context
+        let html = browser.html().await.unwrap_or_default();
+        let text_summary = ext::strip_html(&html);
+        let visible_text_summary = text_summary.chars().take(3000).collect();
+
+        Ok(PageSnapshot {
+            url,
+            title,
+            visible_text_summary,
+            elements,
+            recent_failures: state.failures.clone(),
+        })
+    }
+
+    /// Get interactable elements by executing JavaScript in the browser
+    /// This provides grounded DOM references instead of regex-based HTML parsing
+    async fn get_browser_elements(
+        browser: &mut StealthBrowser,
+    ) -> Result<Vec<InteractableElement>, ScrapioError> {
+        // JavaScript to query the DOM and extract interactable elements with stable IDs
+        let js_code = r#"
+            (function() {
+                const elements = [];
+                let idCounter = 1;
+
+                // Helper to check if element is visible
+                function isVisible(el) {
+                    const style = window.getComputedStyle(el);
+                    return style.display !== 'none' &&
+                           style.visibility !== 'hidden' &&
+                           style.opacity !== '0' &&
+                           el.offsetParent !== null;
+                }
+
+                // Helper to get text content safely
+                function getText(el) {
+                    return el.textContent.trim().substring(0, 200);
+                }
+
+                // Query selectors for different element types
+                const selectors = [
+                    { type: 'link', selector: 'a[href]' },
+                    { type: 'button', selector: 'button' },
+                    { type: 'input', selector: 'input:not([type="hidden"])' },
+                    { type: 'select', selector: 'select' },
+                    { type: 'textarea', selector: 'textarea' }
+                ];
+
+                for (const { type, selector } of selectors) {
+                    try {
+                        const els = document.querySelectorAll(selector);
+                        for (const el of els) {
+                            if (!isVisible(el)) continue;
+
+                            const role = el.getAttribute('role') || type;
+                            const text = getText(el);
+                            const href = el.href || el.getAttribute('href');
+                            const placeholder = el.placeholder || null;
+                            const disabled = el.disabled;
+                            const value = el.value || '';
+                            const typeAttr = el.type || type;
+
+                            // Skip elements with no useful content
+                            if (type === 'link' && !text && !href) continue;
+                            if (type === 'input' && !text && !placeholder && !value) continue;
+                            if (type === 'button' && !text) continue;
+
+                            elements.push({
+                                id: 'e' + idCounter++,
+                                element_type: typeAttr,
+                                text: text || value || '',
+                                selector_hint: null,
+                                href: href,
+                                placeholder: placeholder,
+                                role: role,
+                                disabled: disabled,
+                                tag: el.tagName.toLowerCase()
+                            });
+
+                            if (idCounter > 25) break;
+                        }
+                    } catch(e) {}
+                    if (idCounter > 25) break;
+                }
+
+                return elements;
+            })()
+        "#;
+
+        let result = browser.execute_script(js_code).await?;
+
+        // Parse the JSON result into InteractableElement structs
+        if let Some(arr) = result.as_array() {
+            let elements: Vec<InteractableElement> = arr
+                .iter()
+                .filter_map(|v| {
+                    Some(InteractableElement {
+                        id: v.get("id")?.as_str()?.to_string(),
+                        element_type: v.get("element_type")?.as_str()?.to_string(),
+                        text: v.get("text")?.as_str()?.to_string(),
+                        selector_hint: None,
+                        href: v.get("href").and_then(|h| h.as_str()).map(|s| s.to_string()),
+                        placeholder: v.get("placeholder").and_then(|p| p.as_str()).map(|s| s.to_string()),
+                    })
+                })
+                .collect();
+            Ok(elements)
+        } else {
+            Err(ScrapioError::Browser("Failed to parse element list from browser".to_string()))
+        }
     }
 
     /// Validate action before execution

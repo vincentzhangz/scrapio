@@ -27,7 +27,39 @@ pub use config::AiConfig;
 pub use browser_agent::{ActionResult, AgentState, BrowserAction, BrowserAiScraper};
 
 #[cfg(feature = "browser")]
-pub use ralph::{RalphLoopOptions, RalphProgress, RalphResult, RalphStopReason, RalphTarget};
+pub use ralph::{RalphInput, RalphInputError, RalphLoopOptions, RalphProgress, RalphResult, RalphStopReason, RalphTarget};
+
+/// Extraction mode used for this result
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtractionMode {
+    /// AI model extraction (primary)
+    #[default]
+    Ai,
+    /// Fallback to heuristic extraction (degraded)
+    Fallback,
+}
+
+/// Reason why fallback was used (meaningful when mode is Fallback)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FallbackReason {
+    /// No API key was configured
+    NoApiKey,
+    /// Provider API call failed
+    ProviderError,
+    /// Schema parsing failed
+    SchemaParseError,
+    /// Model output could not be parsed as JSON
+    InvalidModelOutput,
+    /// Network error or timeout
+    NetworkError,
+    /// Rate limited by provider
+    RateLimited,
+    /// Unknown error
+    #[default]
+    Unknown,
+}
 
 /// Result from AI extraction
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,10 +72,23 @@ pub struct AiExtractionResult {
     pub markdown: Option<String>,
     /// Links discovered by AI
     pub links: Vec<String>,
-    /// Whether fallback was used
-    pub used_fallback: bool,
     /// Model used for extraction
     pub model: String,
+    /// Extraction mode: ai or fallback
+    #[serde(default)]
+    pub mode: ExtractionMode,
+    /// Reason for fallback (only populated when mode is Fallback)
+    #[serde(default)]
+    pub fallback_reason: Option<FallbackReason>,
+    /// Provider error message if provider failed
+    #[serde(default)]
+    pub provider_error: Option<String>,
+    /// Whether schema validation passed (for AI mode)
+    #[serde(default)]
+    pub schema_validation_passed: bool,
+    /// Confidence score (0.0-1.0) if available
+    #[serde(default)]
+    pub confidence: Option<f32>,
 }
 
 /// AI Scraper for intelligent content extraction
@@ -86,12 +131,26 @@ impl AiScraper {
         let html = self.http.client().get(url).send().await?.text().await?;
         let text_content = extraction::strip_html(&html);
 
-        let result = self
+        // Try AI extraction first, handle errors explicitly
+        match self
             .extract_with_ai(&text_content, schema, include_markdown, url)
             .await
-            .unwrap_or_else(|_| extraction::fallback_extraction(&html, url));
-
-        Ok(result)
+        {
+            Ok(result) => {
+                // If result is already fallback mode, preserve it
+                // Otherwise it's AI mode from extract_with_ai
+                Ok(result)
+            }
+            Err(e) => {
+                // Log the error and fall back to heuristic extraction
+                tracing::warn!("AI extraction failed, falling back: {}", e);
+                let mut fallback_result = extraction::fallback_extraction(&html, url);
+                fallback_result.mode = ExtractionMode::Fallback;
+                fallback_result.provider_error = Some(e.to_string());
+                fallback_result.fallback_reason = Some(FallbackReason::ProviderError);
+                Ok(fallback_result)
+            }
+        }
     }
 
     /// Extract content using LLM
@@ -104,7 +163,9 @@ impl AiScraper {
     ) -> ScrapioResult<AiExtractionResult> {
         // Use fallback if API key is not set (except for Ollama which doesn't require one)
         if self.config.provider != "ollama" && self.config.api_key.is_none() {
-            return Ok(extraction::fallback_extraction(content, url));
+            let mut result = extraction::fallback_extraction(content, url);
+            result.fallback_reason = Some(FallbackReason::NoApiKey);
+            return Ok(result);
         }
 
         // Create provider and extract
@@ -125,8 +186,12 @@ impl AiScraper {
                 None
             },
             links,
-            used_fallback: false,
             model: self.config.model.clone(),
+            mode: ExtractionMode::Ai,
+            fallback_reason: None,
+            provider_error: None,
+            schema_validation_passed: true,
+            confidence: None,
         })
     }
 
@@ -192,5 +257,89 @@ mod tests {
         let scraper = AiScraper::with_config(config);
         assert_eq!(scraper.config().provider, "anthropic");
         assert_eq!(scraper.config().model, "claude-sonnet");
+    }
+
+    // === ExtractionMode Tests ===
+
+    #[test]
+    fn test_extraction_mode_default() {
+        let mode = ExtractionMode::default();
+        assert_eq!(mode, ExtractionMode::Ai);
+    }
+
+    #[test]
+    fn test_extraction_mode_serialization() {
+        use serde_json;
+        let ai = serde_json::to_string(&ExtractionMode::Ai).unwrap();
+        assert!(ai.contains("ai"));
+
+        let fallback = serde_json::to_string(&ExtractionMode::Fallback).unwrap();
+        assert!(fallback.contains("fallback"));
+    }
+
+    // === FallbackReason Tests ===
+
+    #[test]
+    fn test_fallback_reason_default() {
+        let reason = FallbackReason::default();
+        assert_eq!(reason, FallbackReason::Unknown);
+    }
+
+    #[test]
+    fn test_fallback_reason_variants() {
+        use serde_json;
+
+        let no_api_key = serde_json::to_string(&FallbackReason::NoApiKey).unwrap();
+        assert!(no_api_key.contains("no_api_key"));
+
+        let provider_err = serde_json::to_string(&FallbackReason::ProviderError).unwrap();
+        assert!(provider_err.contains("provider_error"));
+
+        let schema_err = serde_json::to_string(&FallbackReason::SchemaParseError).unwrap();
+        assert!(schema_err.contains("schema_parse_error"));
+    }
+
+    // === AiExtractionResult Tests ===
+
+    #[test]
+    fn test_ai_extraction_result_fallback_fields() {
+        let result = AiExtractionResult {
+            url: "https://example.com".to_string(),
+            data: serde_json::json!({"title": "Test"}),
+            markdown: None,
+            links: vec![],
+            model: "gpt-4o".to_string(),
+            mode: ExtractionMode::Fallback,
+            fallback_reason: Some(FallbackReason::NoApiKey),
+            provider_error: Some("No API key".to_string()),
+            schema_validation_passed: false,
+            confidence: None,
+        };
+
+        assert_eq!(result.mode, ExtractionMode::Fallback);
+        assert_eq!(result.fallback_reason, Some(FallbackReason::NoApiKey));
+        assert!(result.provider_error.is_some());
+    }
+
+    #[test]
+    fn test_ai_extraction_result_ai_mode() {
+        let result = AiExtractionResult {
+            url: "https://example.com".to_string(),
+            data: serde_json::json!({"title": "Test"}),
+            markdown: None,
+            links: vec![],
+            model: "gpt-4o".to_string(),
+            mode: ExtractionMode::Ai,
+            fallback_reason: None,
+            provider_error: None,
+            schema_validation_passed: true,
+            confidence: Some(0.95),
+        };
+
+        assert_eq!(result.mode, ExtractionMode::Ai);
+        assert!(result.fallback_reason.is_none());
+        assert!(result.provider_error.is_none());
+        assert!(result.schema_validation_passed);
+        assert_eq!(result.confidence, Some(0.95));
     }
 }

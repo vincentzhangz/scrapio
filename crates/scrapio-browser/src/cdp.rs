@@ -2,6 +2,55 @@
 //!
 //! This module provides CDP commands for injecting stealth scripts and
 //! manipulating browser state for anti-detection.
+//!
+//! ## Architecture: WebDriver vs CDP
+//!
+//! Scrapio uses a dual-layer approach for browser control:
+//!
+//! ### WebDriver (Primary Transport)
+//! - **Purpose**: Primary navigation and action execution
+//! - **Responsibilities**:
+//!   - Page navigation (goto, back, forward)
+//!   - Element finding and interaction (click, type, hover)
+//!   - Form submission
+//!   - Screenshot capture
+//!   - DOM inspection
+//! - **Library**: `fantoccini` (Rust WebDriver client)
+//!
+//! ### CDP (Browser Augmentation)
+//! - **Purpose**: Stealth and browser-state manipulation
+//! - **Responsibilities**:
+//!   - JavaScript injection for stealth scripts
+//!   - Viewport and window configuration
+//!   - User agent override
+//!   - Locale and timezone settings
+//!   - Canvas fingerprint randomization
+//!   - WebGL fingerprint handling
+//! - **Usage**: Called before/during page load to configure browser state
+//!
+//! ## Design Rationale
+//!
+//! Separating WebDriver and CDP concerns provides several benefits:
+//! 1. **Stability**: WebDriver operations are well-standardized and stable
+//! 2. **Stealth Configurability**: CDP allows fine-grained control over browser fingerprints
+//! 3. **Clear Boundaries**: Easy to swap stealth strategies without touching core navigation
+//! 4. **Testability**: Each layer can be tested independently
+//!
+//! ## Usage Pattern
+//!
+//! ```ignore
+//! // 1. Start browser with WebDriver
+//! let mut browser = StealthBrowser::new().init().await?;
+//!
+//! // 2. Configure stealth via CDP before navigation
+//! browser.execute_script(&stealth_script).await?;
+//!
+//! // 3. Navigate using WebDriver
+//! browser.goto(url).await?;
+//!
+//! // 4. Interact via WebDriver
+//! browser.click(selector).await?;
+//! ```
 
 use serde::{Deserialize, Serialize};
 

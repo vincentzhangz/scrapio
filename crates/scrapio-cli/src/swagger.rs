@@ -55,7 +55,9 @@ pub struct AiResponse {
     pub description: Option<String>,
     pub links: Vec<String>,
     pub model: String,
-    pub used_fallback: bool,
+    pub extraction_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback_reason: Option<String>,
 }
 
 /// Result item from storage
@@ -243,7 +245,9 @@ pub async fn scrape(
                     "description": result.data.get("description"),
                     "links": result.links,
                     "model": result.model,
-                    "used_fallback": result.used_fallback
+                    "extraction_mode": format!("{:?}", result.mode),
+                    "fallback_reason": result.fallback_reason.as_ref().map(|r| format!("{:?}", r)),
+                    "provider_error": result.provider_error
                 });
                 (axum::http::StatusCode::OK, axum::Json(json))
             }

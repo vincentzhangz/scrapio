@@ -27,7 +27,13 @@ fn main() {
             Ok(result) => {
                 println!("URL: {}", result.url);
                 println!("Model: {}", result.model);
-                println!("Used fallback: {}", result.used_fallback);
+                println!("Extraction mode: {:?}", result.mode);
+                if let Some(ref reason) = result.fallback_reason {
+                    println!("Fallback reason: {:?}", reason);
+                }
+                if let Some(ref error) = result.provider_error {
+                    println!("Provider error: {}", error);
+                }
                 println!("Links found: {}", result.links.len());
                 println!(
                     "Data: {}",

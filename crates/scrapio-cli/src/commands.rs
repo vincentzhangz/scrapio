@@ -10,6 +10,36 @@ use scrapio_classic::Scraper;
 use scrapio_runtime::Runtime;
 use scrapio_storage::Storage;
 
+/// Output format options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Json,
+    Csv,
+    Text,
+}
+
+impl OutputFormat {
+    /// Parse output format from string (case-insensitive)
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "json" => OutputFormat::Json,
+            "csv" => OutputFormat::Csv,
+            _ => OutputFormat::Text,
+        }
+    }
+}
+
+/// Write output content to file or stdout
+fn write_output(content: &str, output_file: Option<&str>) {
+    match output_file {
+        Some(path) => match std::fs::write(path, content) {
+            Ok(_) => println!("Output saved to: {}", path),
+            Err(e) => eprintln!("Error writing to file: {}", e),
+        },
+        None => println!("{}", content),
+    }
+}
+
 fn run_async<F: std::future::Future>(f: F) -> F::Output {
     scrapio_runtime::TokioRuntime::default().block_on(f)
 }
@@ -177,17 +207,18 @@ fn handle_ai_http(
         let schema = schema.unwrap_or_else(|| "{}".to_string());
         match scraper.scrape(url, &schema).await {
             Ok(result) => {
-                let output_content = match output.to_lowercase().as_str() {
-                    "json" => serde_json::to_string_pretty(&result).unwrap_or_default(),
-                    "csv" => {
+                let format = OutputFormat::from_str(output);
+                let output_content = match format {
+                    OutputFormat::Json => serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    OutputFormat::Csv => {
                         // For CSV, output as key-value pairs
                         let mut csv_output = String::new();
-                        csv_output.push_str("url,model,used_fallback,links_count\n");
+                        csv_output.push_str("url,model,extraction_mode,links_count\n");
                         csv_output.push_str(&format!(
-                            "{},{},{},{}\n",
+                            "{},{},{:?},{}\n",
                             result.url,
                             result.model,
-                            result.used_fallback,
+                            result.mode,
                             result.links.len()
                         ));
                         // Also output data as separate rows
@@ -197,12 +228,18 @@ fn handle_ai_http(
                         }
                         csv_output
                     }
-                    _ => {
+                    OutputFormat::Text => {
                         // Default text output
                         let mut text_output = String::new();
                         text_output.push_str(&format!("URL: {}\n", result.url));
                         text_output.push_str(&format!("Model: {}\n", result.model));
-                        text_output.push_str(&format!("Used fallback: {}\n", result.used_fallback));
+                        text_output.push_str(&format!("Extraction mode: {:?}\n", result.mode));
+                        if let Some(ref reason) = result.fallback_reason {
+                            text_output.push_str(&format!("Fallback reason: {:?}\n", reason));
+                        }
+                        if let Some(ref error) = result.provider_error {
+                            text_output.push_str(&format!("Provider error: {}\n", error));
+                        }
                         text_output.push_str(&format!("Links found: {}\n", result.links.len()));
                         text_output.push_str(&format!(
                             "Data: {}",
@@ -213,15 +250,7 @@ fn handle_ai_http(
                 };
 
                 // Write to file or stdout
-                match output_file {
-                    Some(file_path) => match std::fs::write(file_path, &output_content) {
-                        Ok(_) => println!("Output saved to: {}", file_path),
-                        Err(e) => eprintln!("Error writing to file: {}", e),
-                    },
-                    None => {
-                        println!("{}", output_content);
-                    }
-                }
+                write_output(&output_content, output_file);
             }
             Err(e) => eprintln!("Error: {}", e),
         }
@@ -251,9 +280,10 @@ fn handle_ai_browser(options: AiScrapeOptions) {
 
         match scraper.ralph_loop(ralph_options).await {
             Ok(result) => {
-                let output_content = match options.output.to_lowercase().as_str() {
-                    "json" => serde_json::to_string_pretty(&result).unwrap_or_default(),
-                    "csv" => {
+                let format = OutputFormat::from_str(&options.output);
+                let output_content = match format {
+                    OutputFormat::Json => serde_json::to_string_pretty(&result).unwrap_or_default(),
+                    OutputFormat::Csv => {
                         // CSV output: one row per extracted target
                         let mut wtr = csv::Writer::from_writer(vec![]);
                         for target in &result.progress.targets {
@@ -273,7 +303,7 @@ fn handle_ai_browser(options: AiScrapeOptions) {
                         let csv_data = wtr.into_inner().unwrap_or_default();
                         String::from_utf8(csv_data).unwrap_or_default()
                     }
-                    _ => {
+                    OutputFormat::Text => {
                         // Default text output
                         let mut text_output = String::new();
                         text_output.push_str("\nUsing Ralph loop for AI browser scraping...\n");
@@ -332,15 +362,7 @@ fn handle_ai_browser(options: AiScrapeOptions) {
                 };
 
                 // Write to file or stdout
-                match &options.output_file {
-                    Some(file_path) => match std::fs::write(file_path, &output_content) {
-                        Ok(_) => println!("Output saved to: {}", file_path),
-                        Err(e) => eprintln!("Error writing to file: {}", e),
-                    },
-                    None => {
-                        println!("{}", output_content);
-                    }
-                }
+                write_output(&output_content, options.output_file.as_deref());
             }
             Err(e) => eprintln!("Error: {}", e),
         }
@@ -415,29 +437,31 @@ pub fn handle_list(database: &str, limit: usize, output: &str) {
         match Storage::new(database).await {
             Ok(storage) => match storage.get_all_results(limit).await {
                 Ok(results) => {
-                    match output.to_lowercase().as_str() {
-                        "json" => {
-                            let json = serde_json::to_string_pretty(&results).unwrap_or_default();
-                            println!("{}", json);
+                    let format = OutputFormat::from_str(output);
+                    let output_content = match format {
+                        OutputFormat::Json => {
+                            serde_json::to_string_pretty(&results).unwrap_or_default()
                         }
-                        "csv" => {
-                            let mut wtr = csv::Writer::from_writer(std::io::stdout());
+                        OutputFormat::Csv => {
+                            let mut wtr = csv::Writer::from_writer(vec![]);
                             for r in &results {
                                 wtr.serialize(r).unwrap_or_default();
                             }
-                            wtr.flush().unwrap_or_default();
+                            let data = wtr.into_inner().unwrap_or_default();
+                            String::from_utf8(data).unwrap_or_default()
                         }
-                        _ => {
-                            // Default text output
-                            println!("Found {} results:\n", results.len());
+                        OutputFormat::Text => {
+                            let mut text = format!("Found {} results:\n", results.len());
                             for r in results {
-                                println!("  {} - {} - {}", r.id, r.status, r.url);
+                                text.push_str(&format!("  {} - {} - {}\n", r.id, r.status, r.url));
                                 if let Some(title) = &r.title {
-                                    println!("    Title: {}", title);
+                                    text.push_str(&format!("    Title: {}\n", title));
                                 }
                             }
+                            text
                         }
-                    }
+                    };
+                    write_output(&output_content, None);
                 }
                 Err(e) => eprintln!("Error: {}", e),
             },

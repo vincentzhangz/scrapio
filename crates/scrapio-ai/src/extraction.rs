@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use scraper::{Html, Selector};
 
-use crate::AiExtractionResult;
+use crate::{AiExtractionResult, ExtractionMode, FallbackReason};
 
 static LINK_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"https?://[^\s]+").unwrap());
 
@@ -94,8 +94,12 @@ pub fn fallback_extraction(content: &str, url: &str) -> AiExtractionResult {
         data,
         markdown: None,
         links,
-        used_fallback: true,
         model: "fallback".to_string(),
+        mode: ExtractionMode::Fallback,
+        fallback_reason: Some(FallbackReason::NoApiKey),
+        provider_error: None,
+        schema_validation_passed: false,
+        confidence: None,
     }
 }
 

@@ -18,6 +18,52 @@ pub const DEFAULT_MAX_ITERATIONS: usize = 50;
 /// Maximum steps per iteration
 pub const DEFAULT_MAX_STEPS: usize = 10;
 
+/// Ralph input type - explicitly defines the schema input format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum RalphInput {
+    /// A natural language objective/prompt (legacy behavior)
+    PromptObjective {
+        /// The objective description
+        objective: String,
+    },
+    /// A list of extraction targets
+    TargetList {
+        /// List of targets to extract
+        targets: Vec<RalphTarget>,
+    },
+    /// A JSON Schema for extraction
+    JsonExtractionSchema {
+        /// The JSON schema
+        schema: String,
+    },
+}
+
+/// Error when parsing Ralph input
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RalphInputError {
+    /// Schema is empty
+    EmptySchema,
+    /// Invalid JSON format
+    InvalidJson(String),
+    /// Unsupported schema format
+    UnsupportedFormat(String),
+    /// Cannot infer input type
+    CannotInferType(String),
+}
+
+impl fmt::Display for RalphInputError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RalphInputError::EmptySchema => write!(f, "Schema is empty"),
+            RalphInputError::InvalidJson(msg) => write!(f, "Invalid JSON: {}", msg),
+            RalphInputError::UnsupportedFormat(msg) => write!(f, "Unsupported format: {}", msg),
+            RalphInputError::CannotInferType(msg) => write!(f, "Cannot infer type: {}", msg),
+        }
+    }
+}
+
 /// Ralph loop configuration
 pub struct RalphLoopOptions<'a> {
     pub url: &'a str,
@@ -47,6 +93,21 @@ impl<'a> Default for RalphLoopOptions<'a> {
     }
 }
 
+/// Extraction verification status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtractionStatus {
+    /// Extraction not yet attempted
+    #[default]
+    Pending,
+    /// Data was extracted but not verified
+    PartialSuccess,
+    /// Data was extracted and verified
+    VerifiedSuccess,
+    /// Extraction failed
+    Failed,
+}
+
 /// A single extraction target in the Ralph loop
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RalphTarget {
@@ -56,6 +117,12 @@ pub struct RalphTarget {
     pub extracted: bool,
     pub data: Option<Value>,
     pub error: Option<String>,
+    /// Verification status of the extraction
+    #[serde(default)]
+    pub status: ExtractionStatus,
+    /// Optional validation rule for this target
+    #[serde(default)]
+    pub validation_rule: Option<String>,
 }
 
 impl RalphTarget {
@@ -66,6 +133,182 @@ impl RalphTarget {
             extracted: false,
             data: None,
             error: None,
+            status: ExtractionStatus::Pending,
+            validation_rule: None,
+        }
+    }
+
+    /// Validate the extracted data for this target
+    pub fn validate(&self) -> bool {
+        // Check if data exists
+        let data = match &self.data {
+            Some(d) => d,
+            None => return false,
+        };
+
+        // If there's a validation rule, use it
+        if let Some(rule) = &self.validation_rule {
+            return self.apply_validation_rule(data, rule);
+        }
+
+        // Default validation: check for non-empty data
+        match data {
+            Value::String(s) => !s.trim().is_empty(),
+            Value::Array(arr) => !arr.is_empty(),
+            Value::Object(obj) => !obj.is_empty(),
+            Value::Number(n) => n.as_i64().map(|v| v != 0).unwrap_or(true),
+            Value::Bool(b) => *b,
+            Value::Null => false,
+        }
+    }
+
+    /// Apply a custom validation rule to the data
+    fn apply_validation_rule(&self, data: &Value, rule: &str) -> bool {
+        match rule {
+            "non_empty" => {
+                match data {
+                    Value::String(s) => !s.trim().is_empty(),
+                    Value::Array(arr) => !arr.is_empty(),
+                    Value::Object(obj) => !obj.is_empty(),
+                    Value::Null => false,
+                    _ => true,
+                }
+            }
+            "required" => !data.is_null(),
+            "not_empty_string" => {
+                data.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false)
+            }
+            r => {
+                // Unknown rule, be permissive
+                tracing::warn!("Unknown validation rule: {}", r);
+                true
+            }
+        }
+    }
+
+    /// Mark this target as verified successfully
+    pub fn mark_verified(&mut self, data: Value) {
+        self.extracted = true;
+        self.data = Some(data);
+        self.error = None;
+        self.status = ExtractionStatus::VerifiedSuccess;
+    }
+
+    /// Mark this target as partially successful (extracted but not verified)
+    pub fn mark_partial(&mut self, data: Value) {
+        self.extracted = true;
+        self.data = Some(data);
+        self.error = None;
+        self.status = ExtractionStatus::PartialSuccess;
+    }
+}
+
+/// Ralph input parsing - explicitly parses different input formats
+impl RalphInput {
+    /// Parse input with explicit type detection
+    pub fn parse(schema: &str, custom_prompt: &str) -> Result<Self, RalphInputError> {
+        // If custom prompt is provided, treat it as objective
+        if !custom_prompt.is_empty() {
+            return Ok(RalphInput::PromptObjective {
+                objective: custom_prompt.to_string(),
+            });
+        }
+
+        // Empty schema check
+        if schema.is_empty() || schema == "[]" {
+            return Err(RalphInputError::EmptySchema);
+        }
+
+        // Try parsing as explicit RalphInput format first
+        if let Ok(input) = serde_json::from_str::<RalphInput>(schema) {
+            return Ok(input);
+        }
+
+        // Try parsing as JSON array of targets (TargetList format)
+        if let Ok(targets) = serde_json::from_str::<Vec<RalphTarget>>(schema) {
+            return Ok(RalphInput::TargetList { targets });
+        }
+
+        // Try parsing as JSON object with items or properties
+        let obj: Value = serde_json::from_str(schema)
+            .map_err(|e| RalphInputError::InvalidJson(e.to_string()))?;
+
+        // Check for items array
+        if let Some(items) = obj.get("items").and_then(|v| v.as_array()) {
+            let targets: Vec<RalphTarget> = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| {
+                    let id = item
+                        .get("id")
+                        .or_else(|| item.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&format!("item_{}", i))
+                        .to_string();
+                    let description = item
+                        .get("description")
+                        .or_else(|| item.get("title"))
+                        .or_else(|| item.get("type"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Extract data")
+                        .to_string();
+                    RalphTarget::new(id, description)
+                })
+                .collect();
+            return Ok(RalphInput::TargetList { targets });
+        }
+
+        // Check for properties object
+        if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
+            let targets: Vec<RalphTarget> = props
+                .iter()
+                .map(|(name, prop)| {
+                    let description = prop
+                        .get("description")
+                        .or_else(|| prop.get("title"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Extract data")
+                        .to_string();
+                    RalphTarget::new(name.clone(), description)
+                })
+                .collect();
+            return Ok(RalphInput::TargetList { targets });
+        }
+
+        // If none of the above, treat as JSON schema
+        Ok(RalphInput::JsonExtractionSchema {
+            schema: schema.to_string(),
+        })
+    }
+
+    /// Extract targets from this input
+    pub fn to_targets(&self) -> Vec<RalphTarget> {
+        match self {
+            RalphInput::PromptObjective { objective } => {
+                vec![RalphTarget::new("objective", objective.clone())]
+            }
+            RalphInput::TargetList { targets } => targets.clone(),
+            RalphInput::JsonExtractionSchema { schema } => {
+                // Extract targets from JSON schema properties
+                #[allow(clippy::collapsible_if)]
+                if let Ok(obj) = serde_json::from_str::<Value>(schema) {
+                    if let Some(props) = obj.get("properties").and_then(|v| v.as_object()) {
+                        return props
+                            .iter()
+                            .map(|(name, prop)| {
+                                let description = prop
+                                    .get("description")
+                                    .or_else(|| prop.get("title"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Extract data")
+                                    .to_string();
+                                RalphTarget::new(name.clone(), description)
+                            })
+                            .collect();
+                    }
+                }
+                vec![RalphTarget::new("default", schema.clone())]
+            }
         }
     }
 }
@@ -86,67 +329,73 @@ pub struct RalphProgress {
 }
 
 impl RalphProgress {
+    /// Check if all targets have been extracted (either verified or partial)
     pub fn all_extracted(&self) -> bool {
-        !self.targets.is_empty() && self.targets.iter().all(|t| t.extracted)
+        !self.targets.is_empty()
+            && self.targets.iter().all(|t| t.extracted)
+    }
+
+    /// Check if all targets have been successfully verified
+    pub fn all_verified(&self) -> bool {
+        !self.targets.is_empty()
+            && self.targets.iter().all(|t| t.status == ExtractionStatus::VerifiedSuccess)
+    }
+
+    /// Check if all targets have failed
+    pub fn all_failed(&self) -> bool {
+        !self.targets.is_empty()
+            && self.targets.iter().all(|t| t.status == ExtractionStatus::Failed)
     }
 
     pub fn next_pending_target(&self) -> Option<&RalphTarget> {
         self.targets.iter().find(|t| !t.extracted)
     }
 
+    /// Mark a target as extracted and validate it
     pub fn mark_extracted(&mut self, target_id: &str, data: Value) {
         if let Some(target) = self.targets.iter_mut().find(|t| t.id == target_id) {
-            target.extracted = true;
-            target.data = Some(data);
+            target.data = Some(data.clone());
             target.error = None;
+
+            // Validate the extracted data
+            if target.validation_rule.is_some() || !data.is_null() {
+                // If there's a validation rule, use it
+                if target.validate() {
+                    target.extracted = true;
+                    target.status = ExtractionStatus::VerifiedSuccess;
+                } else {
+                    // Data exists but validation failed
+                    target.extracted = true;
+                    target.status = ExtractionStatus::PartialSuccess;
+                    target.error = Some("Validation failed: data did not meet requirements".to_string());
+                }
+            } else {
+                target.extracted = true;
+                target.status = ExtractionStatus::PartialSuccess;
+            }
         }
     }
 
+    /// Mark a target as failed
     pub fn mark_failed(&mut self, target_id: &str, error: &str) {
         if let Some(target) = self.targets.iter_mut().find(|t| t.id == target_id) {
             target.error = Some(error.to_string());
+            target.status = ExtractionStatus::Failed;
         }
     }
 
-    pub fn from_schema(schema: &str) -> Result<Self, ScrapioError> {
-        let parsed: Result<Vec<RalphTarget>, _> = serde_json::from_str(schema);
+    pub fn from_schema(schema: &str, custom_prompt: &str) -> Result<Self, ScrapioError> {
+        // Use the new explicit input parser
+        let input = RalphInput::parse(schema, custom_prompt)
+            .map_err(|e| ScrapioError::Parse(e.to_string()))?;
 
-        let targets = match parsed {
-            Ok(t) => t,
-            Err(_) => {
-                let obj: Value =
-                    serde_json::from_str(schema).map_err(|e| ScrapioError::Parse(e.to_string()))?;
+        let targets = input.to_targets();
 
-                if let Some(items) = obj
-                    .get("items")
-                    .or_else(|| obj.get("properties"))
-                    .and_then(|v| v.as_array())
-                {
-                    items
-                        .iter()
-                        .enumerate()
-                        .map(|(i, item)| {
-                            let id = item
-                                .get("id")
-                                .or_else(|| item.get("name"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or(&format!("item_{}", i))
-                                .to_string();
-                            let description = item
-                                .get("description")
-                                .or_else(|| item.get("title"))
-                                .or_else(|| item.get("type"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("Extract data")
-                                .to_string();
-                            RalphTarget::new(id, description)
-                        })
-                        .collect()
-                } else {
-                    vec![RalphTarget::new("default", schema)]
-                }
-            }
-        };
+        if targets.is_empty() {
+            return Err(ScrapioError::Parse(
+                "No targets could be extracted from schema".to_string(),
+            ));
+        }
 
         Ok(Self {
             targets,
@@ -230,21 +479,8 @@ impl BrowserAiScraper {
         browser: &mut StealthBrowser,
         options: RalphLoopOptions<'_>,
     ) -> Result<RalphResult, ScrapioError> {
-        // If custom_prompt is provided and schema is empty or "[]", treat prompt as the target
-        let schema = if (options.schema.is_empty() || options.schema == "[]")
-            && !options.custom_prompt.is_empty()
-        {
-            // Create single target from prompt
-            serde_json::json!([{
-                "id": "objective",
-                "description": options.custom_prompt
-            }])
-            .to_string()
-        } else {
-            options.schema.to_string()
-        };
-
-        let mut progress = RalphProgress::from_schema(&schema)?;
+        // Let RalphInput::parse handle all the format detection
+        let mut progress = RalphProgress::from_schema(options.schema, options.custom_prompt)?;
 
         let max_iterations = options.max_iterations.unwrap_or(DEFAULT_MAX_ITERATIONS);
         let max_steps = options.max_steps_per_iteration.unwrap_or(DEFAULT_MAX_STEPS);
@@ -531,5 +767,317 @@ impl BrowserAiScraper {
             "stop_reason": stop_reason.to_string(),
             "extracted_data": state.extracted_data
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // === RalphInput Tests ===
+
+    #[test]
+    fn test_ralph_input_parse_prompt_objective() {
+        let input = RalphInput::parse("[]", "Extract product name and price").unwrap();
+        match input {
+            RalphInput::PromptObjective { objective } => {
+                assert_eq!(objective, "Extract product name and price");
+            }
+            _ => panic!("Expected PromptObjective"),
+        }
+    }
+
+    #[test]
+    fn test_ralph_input_parse_target_list() {
+        let schema = r#"[{"id": "title", "description": "Extract title"}, {"id": "price", "description": "Extract price"}]"#;
+        let input = RalphInput::parse(schema, "").unwrap();
+        match input {
+            RalphInput::TargetList { targets } => {
+                assert_eq!(targets.len(), 2);
+                assert_eq!(targets[0].id, "title");
+                assert_eq!(targets[1].id, "price");
+            }
+            _ => panic!("Expected TargetList"),
+        }
+    }
+
+    #[test]
+    fn test_ralph_input_parse_json_schema() {
+        // Use a schema without properties - should be treated as JsonExtractionSchema
+        let schema = r#"{"type": "object", "required": ["name"], "additionalProperties": false}"#;
+        let input = RalphInput::parse(schema, "").unwrap();
+        match input {
+            RalphInput::JsonExtractionSchema { .. } => {}
+            _ => panic!("Expected JsonExtractionSchema"),
+        }
+    }
+
+    #[test]
+    fn test_ralph_input_parse_json_schema_with_properties() {
+        // With properties, it should be parsed as TargetList
+        let schema = r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#;
+        let input = RalphInput::parse(schema, "").unwrap();
+        match input {
+            RalphInput::TargetList { targets } => {
+                assert_eq!(targets.len(), 1);
+                assert_eq!(targets[0].id, "name");
+            }
+            _ => panic!("Expected TargetList"),
+        }
+    }
+
+    #[test]
+    fn test_ralph_input_parse_explicit_format() {
+        let schema = r#"{"type": "prompt_objective", "objective": "Do something"}"#;
+        let input = RalphInput::parse(schema, "").unwrap();
+        match input {
+            RalphInput::PromptObjective { objective } => {
+                assert_eq!(objective, "Do something");
+            }
+            _ => panic!("Expected PromptObjective"),
+        }
+    }
+
+    #[test]
+    fn test_ralph_input_parse_empty_schema_error() {
+        let result = RalphInput::parse("", "");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RalphInputError::EmptySchema => {}
+            e => panic!("Expected EmptySchema, got {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_ralph_input_parse_invalid_json_error() {
+        let result = RalphInput::parse("{invalid json}", "");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ralph_input_to_targets_prompt_objective() {
+        let input = RalphInput::PromptObjective {
+            objective: "Test objective".to_string(),
+        };
+        let targets = input.to_targets();
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].id, "objective");
+        assert_eq!(targets[0].description, "Test objective");
+    }
+
+    #[test]
+    fn test_ralph_input_to_targets_target_list() {
+        let input = RalphInput::TargetList {
+            targets: vec![
+                RalphTarget::new("id1", "desc1"),
+                RalphTarget::new("id2", "desc2"),
+            ],
+        };
+        let targets = input.to_targets();
+        assert_eq!(targets.len(), 2);
+    }
+
+    // === RalphTarget Validation Tests ===
+
+    #[test]
+    fn test_ralph_target_validate_non_empty_string() {
+        let data = serde_json::json!("some value");
+        // Create a target with data and validate
+        let mut t = RalphTarget::new("test", "desc");
+        t.data = Some(data);
+        assert!(t.validate());
+    }
+
+    #[test]
+    fn test_ralph_target_validate_empty_string() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.data = Some(serde_json::json!(""));
+        assert!(!target.validate());
+    }
+
+    #[test]
+    fn test_ralph_target_validate_non_empty_array() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.data = Some(serde_json::json!(["item1", "item2"]));
+        assert!(target.validate());
+    }
+
+    #[test]
+    fn test_ralph_target_validate_empty_array() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.data = Some(serde_json::json!([]));
+        assert!(!target.validate());
+    }
+
+    #[test]
+    fn test_ralph_target_validate_null() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.data = Some(serde_json::json!(null));
+        assert!(!target.validate());
+    }
+
+    #[test]
+    fn test_ralph_target_validate_with_rule_non_empty() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.data = Some(serde_json::json!("value"));
+        target.validation_rule = Some("non_empty".to_string());
+        assert!(target.validate());
+    }
+
+    #[test]
+    fn test_ralph_target_validate_with_rule_required() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.data = Some(serde_json::json!("something"));
+        target.validation_rule = Some("required".to_string());
+        assert!(target.validate());
+    }
+
+    #[test]
+    fn test_ralph_target_validate_with_rule_not_empty_string() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.data = Some(serde_json::json!("  hello  "));
+        target.validation_rule = Some("not_empty_string".to_string());
+        assert!(target.validate());
+    }
+
+    #[test]
+    fn test_ralph_target_mark_verified() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.mark_verified(serde_json::json!({"key": "value"}));
+        assert!(target.extracted);
+        assert_eq!(target.status, ExtractionStatus::VerifiedSuccess);
+        assert!(target.error.is_none());
+    }
+
+    #[test]
+    fn test_ralph_target_mark_partial() {
+        let mut target = RalphTarget::new("test", "desc");
+        target.mark_partial(serde_json::json!({"key": "value"}));
+        assert!(target.extracted);
+        assert_eq!(target.status, ExtractionStatus::PartialSuccess);
+    }
+
+    // === RalphProgress Tests ===
+
+    #[test]
+    fn test_ralph_progress_all_extracted() {
+        let mut progress = RalphProgress::default();
+        progress.targets.push(RalphTarget::new("t1", "d1"));
+        progress.targets.push(RalphTarget::new("t2", "d2"));
+
+        // Initially not all extracted
+        assert!(!progress.all_extracted());
+
+        // Mark one as extracted
+        progress.mark_extracted("t1", serde_json::json!("value"));
+        assert!(!progress.all_extracted());
+
+        // Mark the other as extracted
+        progress.mark_extracted("t2", serde_json::json!("value"));
+        assert!(progress.all_extracted());
+    }
+
+    #[test]
+    fn test_ralph_progress_all_verified() {
+        let mut progress = RalphProgress::default();
+        progress.targets.push(RalphTarget::new("t1", "d1"));
+        progress.targets.push(RalphTarget::new("t2", "d2"));
+
+        // Initially not verified
+        assert!(!progress.all_verified());
+
+        // Mark both as verified
+        progress.mark_extracted("t1", serde_json::json!("value1"));
+        progress.mark_extracted("t2", serde_json::json!("value2"));
+
+        // Should be verified (validation passes for non-empty strings)
+        assert!(progress.all_verified());
+    }
+
+    #[test]
+    fn test_ralph_progress_all_failed() {
+        let mut progress = RalphProgress::default();
+        progress.targets.push(RalphTarget::new("t1", "d1"));
+        progress.targets.push(RalphTarget::new("t2", "d2"));
+
+        assert!(!progress.all_failed());
+
+        progress.mark_failed("t1", "error 1");
+        progress.mark_failed("t2", "error 2");
+
+        assert!(progress.all_failed());
+    }
+
+    #[test]
+    fn test_ralph_progress_mark_failed() {
+        let mut progress = RalphProgress::default();
+        progress.targets.push(RalphTarget::new("test", "desc"));
+
+        progress.mark_failed("test", "Something went wrong");
+
+        let target = &progress.targets[0];
+        assert_eq!(target.error, Some("Something went wrong".to_string()));
+        assert_eq!(target.status, ExtractionStatus::Failed);
+    }
+
+    #[test]
+    fn test_ralph_progress_from_schema() {
+        let schema = r#"[{"id": "a", "description": "A"}, {"id": "b", "description": "B"}]"#;
+        let progress = RalphProgress::from_schema(schema, "").unwrap();
+
+        assert_eq!(progress.targets.len(), 2);
+        assert_eq!(progress.targets[0].id, "a");
+        assert_eq!(progress.targets[1].id, "b");
+    }
+
+    #[test]
+    fn test_ralph_progress_from_schema_with_prompt() {
+        let progress = RalphProgress::from_schema("[]", "My objective").unwrap();
+
+        assert_eq!(progress.targets.len(), 1);
+        assert_eq!(progress.targets[0].id, "objective");
+        assert_eq!(progress.targets[0].description, "My objective");
+    }
+
+    #[test]
+    fn test_ralph_progress_next_pending_target() {
+        let mut progress = RalphProgress::default();
+        progress.targets.push(RalphTarget::new("t1", "d1"));
+        progress.targets.push(RalphTarget::new("t2", "d2"));
+
+        let next = progress.next_pending_target();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().id, "t1");
+
+        progress.mark_extracted("t1", serde_json::json!("value"));
+
+        let next = progress.next_pending_target();
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().id, "t2");
+    }
+
+    // === ExtractionStatus Tests ===
+
+    #[test]
+    fn test_extraction_status_default() {
+        let status = ExtractionStatus::default();
+        assert_eq!(status, ExtractionStatus::Pending);
+    }
+
+    #[test]
+    fn test_extraction_status_values() {
+        use serde_json;
+
+        let pending = serde_json::to_string(&ExtractionStatus::Pending).unwrap();
+        assert!(pending.contains("pending"));
+
+        let partial = serde_json::to_string(&ExtractionStatus::PartialSuccess).unwrap();
+        assert!(partial.contains("partial_success"));
+
+        let verified = serde_json::to_string(&ExtractionStatus::VerifiedSuccess).unwrap();
+        assert!(verified.contains("verified_success"));
+
+        let failed = serde_json::to_string(&ExtractionStatus::Failed).unwrap();
+        assert!(failed.contains("failed"));
     }
 }
