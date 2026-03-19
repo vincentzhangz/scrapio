@@ -371,10 +371,10 @@ pub fn handle_crawl(
     no_store: bool,
     capture_network: bool,
 ) {
-    use scrapio_classic::crawler::{BrowserEscalation, CrawlOptions, Crawler, Scope, ScopeMode};
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
     use ctrlc::set_handler;
+    use scrapio_classic::crawler::{BrowserEscalation, CrawlOptions, Crawler, Scope, ScopeMode};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     // Use atomic flag for shutdown signaling
     let should_shutdown = Arc::new(AtomicBool::new(false));

@@ -1,5 +1,8 @@
 # Scrapio
 
+[![CI](https://github.com/vincentzhangz/scrapio/actions/workflows/lint.yml/badge.svg)](https://github.com/vincentzhangz/scrapio/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 All-in-one web scraping toolkit with AI and non-AI capabilities.
 
 ## Features
