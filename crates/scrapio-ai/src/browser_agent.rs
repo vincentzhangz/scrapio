@@ -685,7 +685,10 @@ impl BrowserAiScraper {
             Ok(elems) => elems,
             Err(e) => {
                 // Fallback to HTML parsing if JS execution fails
-                tracing::warn!("JS element extraction failed, falling back to HTML parsing: {}", e);
+                tracing::warn!(
+                    "JS element extraction failed, falling back to HTML parsing: {}",
+                    e
+                );
                 let html = browser.html().await.unwrap_or_default();
                 extract_interactable_elements(&html)
             }
@@ -792,14 +795,22 @@ impl BrowserAiScraper {
                         element_type: v.get("element_type")?.as_str()?.to_string(),
                         text: v.get("text")?.as_str()?.to_string(),
                         selector_hint: None,
-                        href: v.get("href").and_then(|h| h.as_str()).map(|s| s.to_string()),
-                        placeholder: v.get("placeholder").and_then(|p| p.as_str()).map(|s| s.to_string()),
+                        href: v
+                            .get("href")
+                            .and_then(|h| h.as_str())
+                            .map(|s| s.to_string()),
+                        placeholder: v
+                            .get("placeholder")
+                            .and_then(|p| p.as_str())
+                            .map(|s| s.to_string()),
                     })
                 })
                 .collect();
             Ok(elements)
         } else {
-            Err(ScrapioError::Browser("Failed to parse element list from browser".to_string()))
+            Err(ScrapioError::Browser(
+                "Failed to parse element list from browser".to_string(),
+            ))
         }
     }
 

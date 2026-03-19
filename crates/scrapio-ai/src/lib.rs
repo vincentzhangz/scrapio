@@ -27,7 +27,10 @@ pub use config::AiConfig;
 pub use browser_agent::{ActionResult, AgentState, BrowserAction, BrowserAiScraper};
 
 #[cfg(feature = "browser")]
-pub use ralph::{RalphInput, RalphInputError, RalphLoopOptions, RalphProgress, RalphResult, RalphStopReason, RalphTarget};
+pub use ralph::{
+    RalphInput, RalphInputError, RalphLoopOptions, RalphProgress, RalphResult, RalphStopReason,
+    RalphTarget,
+};
 
 /// Extraction mode used for this result
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

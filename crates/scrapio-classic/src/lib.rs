@@ -3,6 +3,7 @@
 use scraper::{Html, Selector};
 use scrapio_core::{ScrapioResult, error::*, http::HttpClient};
 
+pub mod crawler;
 pub mod pipeline;
 pub mod spider;
 

@@ -50,6 +50,30 @@ enum Commands {
         url: String,
         #[arg(long, default_value = "2")]
         depth: usize,
+        #[arg(long)]
+        max_pages: Option<usize>,
+        #[arg(long)]
+        scope: Option<String>,
+        #[arg(long)]
+        extract: bool,
+        #[arg(long)]
+        schema: Option<String>,
+        #[arg(long, default_value = "openai")]
+        provider: String,
+        #[arg(long, default_value = "")]
+        model: String,
+        #[arg(long, default_value = "auto")]
+        browser_escalation: String,
+        #[arg(long)]
+        sitemap: bool,
+        #[arg(long)]
+        robots: bool,
+        #[arg(long, default_value = "scrapio.db")]
+        store: String,
+        #[arg(long)]
+        no_store: bool,
+        #[arg(long)]
+        network: bool,
     },
     Save {
         url: String,
@@ -118,7 +142,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 output_file.as_deref(),
             );
         }
-        Commands::Crawl { url, depth } => commands::handle_crawl(&url, depth),
+        Commands::Crawl {
+            url,
+            depth,
+            max_pages,
+            scope,
+            extract,
+            schema,
+            provider,
+            model,
+            browser_escalation,
+            sitemap,
+            robots,
+            store,
+            no_store,
+            network,
+        } => commands::handle_crawl(
+            &url,
+            depth,
+            max_pages,
+            scope.as_deref(),
+            extract,
+            schema.as_deref(),
+            &provider,
+            &model,
+            &browser_escalation,
+            sitemap,
+            robots,
+            &store,
+            no_store,
+            network,
+        ),
         Commands::Save { url, database } => commands::handle_save(&url, &database),
         Commands::List {
             database,

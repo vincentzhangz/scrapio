@@ -15,6 +15,8 @@ default = []
 [dependencies]
 axum = { version = "0.8", features = ["macros"] }
 clap = { version = "4", features = ["derive", "env"] }
+csv = "1"
+ctrlc = "3"
 reqwest = { version = "0.13", features = ["json"] }
 scrapio-ai = { path = "../scrapio-ai", features = ["browser"] }
 scrapio-browser = { path = "../scrapio-browser" }
@@ -24,7 +26,6 @@ scrapio-runtime = { path = "../scrapio-runtime" }
 scrapio-storage = { path = "../scrapio-storage" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-csv = "1"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tracing = "0.1"

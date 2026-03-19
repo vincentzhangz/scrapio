@@ -6,13 +6,18 @@ description = "Classic rule-based scraping for Scrapio"
 license = "MIT"
 
 [dependencies]
+chrono = { version = "0.4", features = ["serde"] }
 csv = "1"
+regex = "1"
 reqwest = "0.13"
-scraper = "0.25"
+scraper = "0.26.0"
+scrapio-browser = { path = "../scrapio-browser" }
 scrapio-core = { path = "../scrapio-core" }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time", "sync"] }
+url = "2"
 
 [dev-dependencies]
 tokio = "1"

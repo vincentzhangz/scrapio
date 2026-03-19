@@ -5,6 +5,7 @@
 
 use fantoccini::{Client, ClientBuilder};
 use scrapio_core::error::ScrapioError;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -12,6 +13,19 @@ use tokio::sync::OnceCell;
 use tracing::{debug, info, warn};
 
 pub use crate::stealth::{StealthConfig, StealthLevel};
+
+/// Represents a captured network request (XHR or fetch)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkRequest {
+    /// Request type: "fetch" or "xhr"
+    pub request_type: String,
+    /// Request URL
+    pub url: String,
+    /// HTTP method
+    pub method: String,
+    /// Timestamp when request was made
+    pub timestamp: u64,
+}
 
 /// A stealth browser instance for automated web browsing
 ///
@@ -454,6 +468,125 @@ impl StealthBrowser {
                 })?;
             }
         }
+        Ok(())
+    }
+
+    /// Enable network request capture
+    ///
+    /// This injects JavaScript to intercept XHR and fetch requests,
+    /// storing them for later retrieval.
+    ///
+    /// # Errors
+    /// Returns an error if script injection fails
+    pub async fn enable_network_capture(&self) -> Result<(), ScrapioError> {
+        let script = r#"
+            (function() {
+                if (window.__networkCaptureEnabled) return;
+                window.__networkCaptureEnabled = true;
+                window.__capturedNetworkRequests = [];
+
+                // Intercept fetch
+                const originalFetch = window.fetch;
+                window.fetch = function(...args) {
+                    const request = {
+                        type: 'fetch',
+                        url: args[0] ? args[0].toString() : '',
+                        method: args[1] ? (args[1].method || 'GET') : 'GET',
+                        timestamp: Date.now()
+                    };
+                    window.__capturedNetworkRequests.push(request);
+
+                    return originalFetch.apply(this, args).catch(err => {
+                        console.error('Fetch error:', err);
+                        throw err;
+                    });
+                };
+
+                // Intercept XMLHttpRequest
+                const originalOpen = XMLHttpRequest.prototype.open;
+                const originalSend = XMLHttpRequest.prototype.send;
+
+                XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+                    this.__method = method;
+                    this.__url = url;
+                    return originalOpen.apply(this, [method, url, ...rest]);
+                };
+
+                XMLHttpRequest.prototype.send = function(...args) {
+                    const request = {
+                        type: 'xhr',
+                        url: this.__url || '',
+                        method: this.__method || 'GET',
+                        timestamp: Date.now()
+                    };
+                    window.__capturedNetworkRequests.push(request);
+
+                    this.addEventListener('load', function() {
+                        // Request completed
+                    });
+
+                    return originalSend.apply(this, args);
+                };
+
+                console.log('Network capture enabled');
+            })();
+        "#;
+
+        self.execute_script(script).await?;
+        Ok(())
+    }
+
+    /// Get captured network requests
+    ///
+    /// Returns all XHR and fetch requests captured since
+    /// enable_network_capture was called.
+    ///
+    /// # Errors
+    /// Returns an error if script execution fails
+    pub async fn get_network_requests(&self) -> Result<Vec<NetworkRequest>, ScrapioError> {
+        let script = r#"
+            (function() {
+                return JSON.stringify(window.__capturedNetworkRequests || []);
+            })();
+        "#;
+
+        let result = self.execute_script(script).await?;
+        let json_str = result.as_str().unwrap_or("[]");
+
+        #[derive(Deserialize)]
+        struct CapturedRequest {
+            #[serde(rename = "type")]
+            request_type: String,
+            url: String,
+            method: String,
+            timestamp: u64,
+        }
+
+        let requests: Vec<CapturedRequest> = serde_json::from_str(json_str).unwrap_or_default();
+
+        Ok(requests
+            .into_iter()
+            .map(|r| NetworkRequest {
+                request_type: r.request_type,
+                url: r.url,
+                method: r.method,
+                timestamp: r.timestamp,
+            })
+            .collect())
+    }
+
+    /// Clear captured network requests
+    ///
+    /// # Errors
+    /// Returns an error if script execution fails
+    pub async fn clear_network_requests(&self) -> Result<(), ScrapioError> {
+        let script = r#"
+            (function() {
+                window.__capturedNetworkRequests = [];
+            })();
+        "#;
+
+        self.execute_script(script).await?;
         Ok(())
     }
 

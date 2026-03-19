@@ -22,9 +22,9 @@ impl Storage {
             std::fs::create_dir_all(parent).map_err(ScrapioError::Io)?;
         }
 
-        // Use proper SQLite URL format
-        // For absolute path /tmp/scrapio.db -> sqlite://tmp/scrapio.db
-        let url = format!("sqlite://{}", path.display());
+        // Use SQLite with direct file path
+        // For absolute path /tmp/scrapio.db -> just /tmp/scrapio.db
+        let url = format!("sqlite:{}?mode=rwc", path.display());
 
         let pool = SqlitePoolOptions::new()
             .max_connections(5)

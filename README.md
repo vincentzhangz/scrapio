@@ -34,12 +34,7 @@ cargo run -- --help
 
 ```bash
 # Basic scraping
-scrapio classic https://www.rust-lang.org
-
-# Output:
-# Status: 200
-# Title: Example Domain
-# Links: 1
+scrapio classic https://rust-lang.org
 ```
 
 ### AI-Powered Scraping
@@ -49,25 +44,25 @@ scrapio classic https://www.rust-lang.org
 export OPENAI_API_KEY=your-api-key
 
 # AI scraping (uses fallback if no key)
-scrapio ai https://www.rust-lang.org
+scrapio ai https://rust-lang.org
 
 # With custom schema
-scrapio ai https://www.rust-lang.org --schema '{"title": "string", "links": "array"}'
+scrapio ai https://rust-lang.org --schema '{"title": "string", "links": "array"}'
 
 # Use specific provider (openai, anthropic, ollama)
-scrapio ai https://www.rust-lang.org --provider ollama
+scrapio ai https://rust-lang.org --provider ollama
 
 # Use browser automation for JavaScript-rendered pages
-scrapio ai https://www.rust-lang.org --browser
+scrapio ai https://rust-lang.org --browser
 
 # With browser automation and custom model
-scrapio ai https://www.rust-lang.org --browser --model gpt-4o
+scrapio ai https://rust-lang.org --browser --model gpt-4o
 
 # With custom prompt to guide the AI
-scrapio ai https://www.rust-lang.org --browser --prompt "Find and extract all the installation commands for different operating systems"
+scrapio ai https://rust-lang.org --browser --prompt "Find and extract all the installation commands for different operating systems"
 
 # With custom schema for structured extraction
-scrapio ai https://www.rust-lang.org --browser --schema '[{"id":"title","description":"Extract page title"}]'
+scrapio ai https://rust-lang.org --browser --schema '[{"id":"title","description":"Extract page title"}]'
 ```
 
 #### AI Browser Mode
@@ -93,13 +88,13 @@ The Ralph loop:
 
 ```bash
 # Ralph loop with prompt (no schema needed)
-scrapio ai https://www.rust-lang.org --browser --prompt "get the main heading"
+scrapio ai https://rust-lang.org --browser --prompt "get the main heading"
 
 # Ralph loop with schema for multiple targets
-scrapio ai https://www.rust-lang.org --browser --schema '[{"id":"title","description":"Get title"},{"id":"links","description":"Get all links"}]'
+scrapio ai https://rust-lang.org --browser --schema '[{"id":"title","description":"Get title"},{"id":"links","description":"Get all links"}]'
 
 # Ralph loop with custom iterations and steps
-scrapio ai https://www.rust-lang.org --browser --prompt "extract install commands" --max-steps 20
+scrapio ai https://rust-lang.org --browser --prompt "extract install commands" --max-steps 20
 ```
 
 The Ralph loop is useful for:
@@ -127,7 +122,7 @@ ollama pull phi3
 ollama serve
 
 # 3. Use Scrapio with Ollama
-scrapio ai https://www.rust-lang.org --provider ollama
+scrapio ai https://rust-lang.org --provider ollama
 ```
 
 ### Selecting Models
@@ -136,20 +131,20 @@ You can specify which model to use with the `--model` flag:
 
 ```bash
 # OpenAI models
-scrapio ai https://www.rust-lang.org --provider openai --model gpt-4o
-scrapio ai https://www.rust-lang.org --provider openai --model gpt-4
-scrapio ai https://www.rust-lang.org --provider openai --model gpt-3.5-turbo
+scrapio ai https://rust-lang.org --provider openai --model gpt-4o
+scrapio ai https://rust-lang.org --provider openai --model gpt-4
+scrapio ai https://rust-lang.org --provider openai --model gpt-3.5-turbo
 
 # Anthropic models
-scrapio ai https://www.rust-lang.org --provider anthropic --model claude-sonnet-4-20250514
-scrapio ai https://www.rust-lang.org --provider anthropic --model claude-3-opus-20240229
-scrapio ai https://www.rust-lang.org --provider anthropic --model claude-3-haiku-20240307
+scrapio ai https://rust-lang.org --provider anthropic --model claude-sonnet-4-20250514
+scrapio ai https://rust-lang.org --provider anthropic --model claude-3-opus-20240229
+scrapio ai https://rust-lang.org --provider anthropic --model claude-3-haiku-20240307
 
 # Ollama models (must be installed locally)
-scrapio ai https://www.rust-lang.org --provider ollama --model llama3
-scrapio ai https://www.rust-lang.org --provider ollama --model mistral
-scrapio ai https://www.rust-lang.org --provider ollama --model phi3
-scrapio ai https://www.rust-lang.org --provider ollama --model codellama
+scrapio ai https://rust-lang.org --provider ollama --model llama3
+scrapio ai https://rust-lang.org --provider ollama --model mistral
+scrapio ai https://rust-lang.org --provider ollama --model phi3
+scrapio ai https://rust-lang.org --provider ollama --model codellama
 ```
 
 #### Environment Variables
@@ -168,15 +163,36 @@ export OLLAMA_BASE_URL=http://localhost:11434
 ### Website Crawling
 
 ```bash
-# Crawl a website with depth limit
-scrapio crawl https://www.rust-lang.org --depth 3
+# Basic crawl with depth limit
+scrapio crawl https://rust-lang.org --depth 3
+
+# With scope control (host, domain, subdomain)
+scrapio crawl https://rust-lang.org --depth 2 --scope domain
+
+# With browser escalation for JS-heavy pages (never, auto, always)
+scrapio crawl https://rust-lang.org --browser-escalation auto
+
+# Discover URLs from sitemap.xml
+scrapio crawl https://rust-lang.org --sitemap
+
+# Discover paths from robots.txt
+scrapio crawl https://rust-lang.org --robots
+
+# Capture network requests (XHR/fetch) in browser mode
+scrapio crawl https://rust-lang.org --network
+
+# With AI extraction
+scrapio crawl https://rust-lang.org --extract --schema '[{"field":"title"}]'
+
+# Save results to SQLite
+scrapio crawl https://rust-lang.org --store results.db
 ```
 
 ### Save to Database
 
 ```bash
 # Save result to SQLite
-scrapio save https://www.rust-lang.org --database scrapio.db
+scrapio save https://rust-lang.org --database scrapio.db
 
 # List saved results
 scrapio list --database scrapio.db
@@ -186,16 +202,16 @@ scrapio list --database scrapio.db
 
 ```bash
 # Basic browser automation (requires ChromeDriver)
-scrapio browser https://www.rust-lang.org --headless
+scrapio browser https://rust-lang.org --headless
 
 # With stealth mode
-scrapio browser https://www.rust-lang.org --stealth full
+scrapio browser https://rust-lang.org --stealth full
 
 # Run with visible browser
-scrapio browser https://www.rust-lang.org --headless=false
+scrapio browser https://rust-lang.org --headless=false
 
 # Execute custom JavaScript
-scrapio browser https://www.rust-lang.org --script myscript.js
+scrapio browser https://rust-lang.org --script myscript.js
 ```
 
 **Stealth Levels:**
@@ -284,7 +300,7 @@ fn main() {
     let runtime = TokioRuntime::default();
     runtime.block_on(async {
         let scraper = Scraper::new();
-        match scraper.scrape("https://www.rust-lang.org").await {
+        match scraper.scrape("https://rust-lang.org").await {
             Ok(response) => {
                 println!("Title: {}", response.title().unwrap_or_default());
                 println!("Links: {}", response.links().len());
@@ -321,7 +337,7 @@ fn main() {
             "links": "array"
         }"#;
 
-        match scraper.scrape("https://www.rust-lang.org", schema).await {
+        match scraper.scrape("https://rust-lang.org", schema).await {
             Ok(result) => {
                 println!("Model: {}", result.model);
                 println!("Data: {}", serde_json::to_string_pretty(&result.data).unwrap());
@@ -354,7 +370,7 @@ fn main() {
         }"#;
 
         // AI will navigate, click, scroll as needed to extract data
-        match scraper.scrape("https://www.rust-lang.org/install.html", schema).await {
+        match scraper.scrape("https://rust-lang.org/install.html", schema).await {
             Ok(result) => {
                 println!("Model: {}", result.model);
                 println!("Data: {}", serde_json::to_string_pretty(&result.data).unwrap());
@@ -381,7 +397,7 @@ impl Spider for MySpider {
     }
 
     fn start_urls(&self) -> Vec<String> {
-        vec!["https://www.rust-lang.org".to_string()]
+        vec!["https://rust-lang.org".to_string()]
     }
 
     fn parse(&self, response: &scrapio_classic::Response) -> SpiderOutput {
@@ -392,7 +408,7 @@ impl Spider for MySpider {
         // Extract links to follow
         let requests: Vec<Request> = response.links()
             .iter()
-            .filter(|l| l.starts_with("https://www.rust-lang.org"))
+            .filter(|l| l.starts_with("https://rust-lang.org"))
             .map(|l| Request::get(l))
             .collect();
 
@@ -424,11 +440,11 @@ fn main() {
 
         // Save a result
         storage.save_result(
-            "https://www.rust-lang.org",
+            "https://rust-lang.org",
             200,
             Some("Example Domain"),
             "<html>...</html>",
-            &["https://www.rust-lang.org/link1".to_string()],
+            &["https://rust-lang.org/link1".to_string()],
         ).await.unwrap();
 
         // List results
@@ -487,7 +503,16 @@ Options:
 scrapio crawl <URL> [OPTIONS]
 
 Options:
-  --depth <DEPTH>    Crawl depth (default: 2)
+  --depth <DEPTH>                   Crawl depth (default: 2)
+  --max-pages <MAX_PAGES>           Maximum pages to crawl
+  --scope <SCOPE>                    Scope mode: host, domain, subdomain
+  --browser-escalation <MODE>       Browser escalation: never, auto, always (default: auto)
+  --sitemap                         Discover URLs from sitemap.xml
+  --robots                          Discover paths from robots.txt
+  --network                         Capture network requests in browser mode
+  --extract                         Enable AI extraction
+  --schema <SCHEMA>                  JSON schema for extraction
+  --store <PATH>                    Save results to SQLite database
 ```
 
 ### Save Command

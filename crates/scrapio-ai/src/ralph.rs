@@ -165,19 +165,15 @@ impl RalphTarget {
     /// Apply a custom validation rule to the data
     fn apply_validation_rule(&self, data: &Value, rule: &str) -> bool {
         match rule {
-            "non_empty" => {
-                match data {
-                    Value::String(s) => !s.trim().is_empty(),
-                    Value::Array(arr) => !arr.is_empty(),
-                    Value::Object(obj) => !obj.is_empty(),
-                    Value::Null => false,
-                    _ => true,
-                }
-            }
+            "non_empty" => match data {
+                Value::String(s) => !s.trim().is_empty(),
+                Value::Array(arr) => !arr.is_empty(),
+                Value::Object(obj) => !obj.is_empty(),
+                Value::Null => false,
+                _ => true,
+            },
             "required" => !data.is_null(),
-            "not_empty_string" => {
-                data.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false)
-            }
+            "not_empty_string" => data.as_str().map(|s| !s.trim().is_empty()).unwrap_or(false),
             r => {
                 // Unknown rule, be permissive
                 tracing::warn!("Unknown validation rule: {}", r);
@@ -331,20 +327,25 @@ pub struct RalphProgress {
 impl RalphProgress {
     /// Check if all targets have been extracted (either verified or partial)
     pub fn all_extracted(&self) -> bool {
-        !self.targets.is_empty()
-            && self.targets.iter().all(|t| t.extracted)
+        !self.targets.is_empty() && self.targets.iter().all(|t| t.extracted)
     }
 
     /// Check if all targets have been successfully verified
     pub fn all_verified(&self) -> bool {
         !self.targets.is_empty()
-            && self.targets.iter().all(|t| t.status == ExtractionStatus::VerifiedSuccess)
+            && self
+                .targets
+                .iter()
+                .all(|t| t.status == ExtractionStatus::VerifiedSuccess)
     }
 
     /// Check if all targets have failed
     pub fn all_failed(&self) -> bool {
         !self.targets.is_empty()
-            && self.targets.iter().all(|t| t.status == ExtractionStatus::Failed)
+            && self
+                .targets
+                .iter()
+                .all(|t| t.status == ExtractionStatus::Failed)
     }
 
     pub fn next_pending_target(&self) -> Option<&RalphTarget> {
@@ -367,7 +368,8 @@ impl RalphProgress {
                     // Data exists but validation failed
                     target.extracted = true;
                     target.status = ExtractionStatus::PartialSuccess;
-                    target.error = Some("Validation failed: data did not meet requirements".to_string());
+                    target.error =
+                        Some("Validation failed: data did not meet requirements".to_string());
                 }
             } else {
                 target.extracted = true;

@@ -17,7 +17,7 @@ pub mod cdp;
 pub mod chromedriver;
 pub mod stealth;
 
-pub use browser::StealthBrowser;
+pub use browser::{NetworkRequest, StealthBrowser};
 pub use chromedriver::{
     ChromeDriverChannel, ChromeDriverError, ChromeDriverManager, ChromeDriverSession,
 };

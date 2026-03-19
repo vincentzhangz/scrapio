@@ -1,14 +1,5 @@
-//! CLI command handlers
-
-use scrapio_ai::AiScraper;
-use scrapio_ai::BrowserAiScraper;
-use scrapio_ai::RalphLoopOptions;
-use scrapio_browser::{
-    ChromeDriverManager, ChromeDriverSession, StealthBrowser, StealthConfig, StealthLevel,
-};
 use scrapio_classic::Scraper;
 use scrapio_runtime::Runtime;
-use scrapio_storage::Storage;
 
 /// Output format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +10,6 @@ pub enum OutputFormat {
 }
 
 impl OutputFormat {
-    /// Parse output format from string (case-insensitive)
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "json" => OutputFormat::Json,
@@ -29,7 +19,6 @@ impl OutputFormat {
     }
 }
 
-/// Write output content to file or stdout
 fn write_output(content: &str, output_file: Option<&str>) {
     match output_file {
         Some(path) => match std::fs::write(path, content) {
@@ -60,7 +49,6 @@ pub fn handle_classic(url: &str) {
     });
 }
 
-/// Options for AI scraping
 pub struct AiScrapeOptions {
     pub url: String,
     pub schema: Option<String>,
@@ -76,20 +64,23 @@ pub struct AiScrapeOptions {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn parse_stealth_level(stealth: Option<&str>) -> StealthLevel {
+fn parse_stealth_level(stealth: Option<&str>) -> scrapio_browser::StealthLevel {
     match stealth {
-        Some("basic") => StealthLevel::Basic,
-        Some("advanced") => StealthLevel::Advanced,
-        Some("full") | Some(_) => StealthLevel::Full,
-        None => StealthLevel::None,
+        Some("basic") => scrapio_browser::StealthLevel::Basic,
+        Some("advanced") => scrapio_browser::StealthLevel::Advanced,
+        Some("full") | Some(_) => scrapio_browser::StealthLevel::Full,
+        None => scrapio_browser::StealthLevel::None,
     }
 }
 
-async fn start_driver(driver_path: Option<&str>) -> Option<ChromeDriverSession> {
+async fn start_driver(driver_path: Option<&str>) -> Option<scrapio_browser::ChromeDriverSession> {
     let result = if let Some(path) = driver_path {
-        ChromeDriverSession::start_with(ChromeDriverManager::new().with_path(path.into())).await
+        scrapio_browser::ChromeDriverSession::start_with(
+            scrapio_browser::ChromeDriverManager::new().with_path(path.into()),
+        )
+        .await
     } else {
-        ChromeDriverSession::start().await
+        scrapio_browser::ChromeDriverSession::start().await
     };
 
     match result {
@@ -104,12 +95,13 @@ async fn start_driver(driver_path: Option<&str>) -> Option<ChromeDriverSession> 
 async fn init_browser(
     driver_url: &str,
     headless: bool,
-    stealth_level: StealthLevel,
-) -> Option<StealthBrowser> {
-    let mut builder = StealthBrowser::with_webdriver(driver_url).headless(headless);
+    stealth_level: scrapio_browser::StealthLevel,
+) -> Option<scrapio_browser::StealthBrowser> {
+    let mut builder =
+        scrapio_browser::StealthBrowser::with_webdriver(driver_url).headless(headless);
 
-    if stealth_level != StealthLevel::None {
-        let config = StealthConfig::new(stealth_level);
+    if stealth_level != scrapio_browser::StealthLevel::None {
+        let config = scrapio_browser::StealthConfig::new(stealth_level);
         builder = builder.stealth(config);
     }
 
@@ -122,7 +114,7 @@ async fn init_browser(
     }
 }
 
-async fn print_page_info(browser: &mut StealthBrowser) {
+async fn print_page_info(browser: &mut scrapio_browser::StealthBrowser) {
     match browser.title().await {
         Ok(title) => println!("Page title: {}", title),
         Err(e) => eprintln!("Failed to get title: {}", e),
@@ -203,7 +195,7 @@ fn handle_ai_http(
         if !model.is_empty() {
             config = config.with_model(model);
         }
-        let scraper = AiScraper::with_config(config);
+        let scraper = scrapio_ai::AiScraper::with_config(config);
         let schema = schema.unwrap_or_else(|| "{}".to_string());
         match scraper.scrape(url, &schema).await {
             Ok(result) => {
@@ -211,7 +203,6 @@ fn handle_ai_http(
                 let output_content = match format {
                     OutputFormat::Json => serde_json::to_string_pretty(&result).unwrap_or_default(),
                     OutputFormat::Csv => {
-                        // For CSV, output as key-value pairs
                         let mut csv_output = String::new();
                         csv_output.push_str("url,model,extraction_mode,links_count\n");
                         csv_output.push_str(&format!(
@@ -221,7 +212,6 @@ fn handle_ai_http(
                             result.mode,
                             result.links.len()
                         ));
-                        // Also output data as separate rows
                         if let Ok(data_json) = serde_json::to_string(&result.data) {
                             csv_output.push_str("data\n");
                             csv_output.push_str(&data_json);
@@ -229,7 +219,6 @@ fn handle_ai_http(
                         csv_output
                     }
                     OutputFormat::Text => {
-                        // Default text output
                         let mut text_output = String::new();
                         text_output.push_str(&format!("URL: {}\n", result.url));
                         text_output.push_str(&format!("Model: {}\n", result.model));
@@ -238,7 +227,7 @@ fn handle_ai_http(
                             text_output.push_str(&format!("Fallback reason: {:?}\n", reason));
                         }
                         if let Some(ref error) = result.provider_error {
-                            text_output.push_str(&format!("Provider error: {}\n", error));
+                            text_output.push_str(&format!("Provider error: {:?}\n", error));
                         }
                         text_output.push_str(&format!("Links found: {}\n", result.links.len()));
                         text_output.push_str(&format!(
@@ -248,8 +237,6 @@ fn handle_ai_http(
                         text_output
                     }
                 };
-
-                // Write to file or stdout
                 write_output(&output_content, output_file);
             }
             Err(e) => eprintln!("Error: {}", e),
@@ -264,15 +251,16 @@ fn handle_ai_browser(options: AiScrapeOptions) {
             config = config.with_model(&options.model);
         }
 
-        let scraper = BrowserAiScraper::with_config(config).with_max_steps(options.max_steps);
+        let scraper =
+            scrapio_ai::BrowserAiScraper::with_config(config).with_max_steps(options.max_steps);
 
-        let ralph_options = RalphLoopOptions {
+        let ralph_options = scrapio_ai::RalphLoopOptions {
             url: &options.url,
             schema: options.schema.as_deref().unwrap_or("[]"),
             custom_prompt: &options.prompt,
             max_iterations: None,
             max_steps_per_iteration: Some(options.max_steps),
-            stealth_level: Some(StealthLevel::Basic),
+            stealth_level: Some(scrapio_browser::StealthLevel::Basic),
             webdriver_url: None,
             headless: options.headless,
             verbose: options.verbose,
@@ -284,7 +272,6 @@ fn handle_ai_browser(options: AiScrapeOptions) {
                 let output_content = match format {
                     OutputFormat::Json => serde_json::to_string_pretty(&result).unwrap_or_default(),
                     OutputFormat::Csv => {
-                        // CSV output: one row per extracted target
                         let mut wtr = csv::Writer::from_writer(vec![]);
                         for target in &result.progress.targets {
                             if target.extracted {
@@ -304,7 +291,6 @@ fn handle_ai_browser(options: AiScrapeOptions) {
                         String::from_utf8(csv_data).unwrap_or_default()
                     }
                     OutputFormat::Text => {
-                        // Default text output
                         let mut text_output = String::new();
                         text_output.push_str("\nUsing Ralph loop for AI browser scraping...\n");
                         text_output.push_str(&format!("URL: {}\n", options.url));
@@ -361,7 +347,6 @@ fn handle_ai_browser(options: AiScrapeOptions) {
                     }
                 };
 
-                // Write to file or stdout
                 write_output(&output_content, options.output_file.as_deref());
             }
             Err(e) => eprintln!("Error: {}", e),
@@ -369,50 +354,259 @@ fn handle_ai_browser(options: AiScrapeOptions) {
     });
 }
 
-pub fn handle_crawl(url: &str, depth: usize) {
+#[allow(clippy::too_many_arguments)]
+pub fn handle_crawl(
+    url: &str,
+    depth: usize,
+    max_pages: Option<usize>,
+    scope: Option<&str>,
+    extract: bool,
+    schema: Option<&str>,
+    provider: &str,
+    model: &str,
+    browser_escalation: &str,
+    discover_sitemap: bool,
+    discover_robots: bool,
+    store_path: &str,
+    no_store: bool,
+    capture_network: bool,
+) {
+    use scrapio_classic::crawler::{BrowserEscalation, CrawlOptions, Crawler, Scope, ScopeMode};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use ctrlc::set_handler;
+
+    // Use atomic flag for shutdown signaling
+    let should_shutdown = Arc::new(AtomicBool::new(false));
+
+    // Set up Ctrl+C handler
+    let _shutdown_flag = should_shutdown.clone();
+    set_handler(move || {
+        // Print message first, then exit
+        eprintln!("\n\n→ Ctrl+C received! Exiting now...");
+        // Small delay to ensure message is printed
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::process::exit(0);
+    })
+    .expect("Error setting Ctrl+C handler");
+
     run_async(async {
-        let scraper = Scraper::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut queue = vec![url.to_string()];
-        let mut current_depth = 0;
+        // Check shutdown flag periodically during async operations
+        if should_shutdown.load(Ordering::SeqCst) {
+            eprintln!("→ Already shutting down...");
+            return;
+        }
 
-        while current_depth < depth && !queue.is_empty() {
-            let urls: Vec<String> = std::mem::take(&mut queue);
-            println!("Depth {}: processing {} URLs", current_depth, urls.len());
+        let scope_mode = match scope {
+            Some("host") => ScopeMode::Host,
+            Some("subdomain") => ScopeMode::Subdomain,
+            Some("custom") => ScopeMode::Custom,
+            _ => ScopeMode::Domain,
+        };
+        let scope = Scope::new(scope_mode);
 
-            for url in urls {
-                if visited.contains(&url) {
-                    continue;
-                }
-                visited.insert(url.clone());
-                match scraper.scrape(&url).await {
-                    Ok(resp) => {
-                        println!("  - {} (status: {})", url, resp.status);
-                        if let Some(title) = resp.title() {
-                            println!("    Title: {}", title.trim());
-                        }
-                        if current_depth + 1 < depth {
-                            for link in resp.links() {
-                                if !visited.contains(&link) && link.starts_with("http") {
-                                    queue.push(link);
+        // Build browser escalation
+        let escalation = match browser_escalation {
+            "never" => BrowserEscalation::Never,
+            "always" => BrowserEscalation::Always,
+            _ => BrowserEscalation::Auto,
+        };
+
+        // Build options
+        let mut options = CrawlOptions::new()
+            .with_max_depth(depth)
+            .with_max_pages(max_pages.unwrap_or(100))
+            .with_scope(scope)
+            .with_rate_limit(10)
+            .with_browser_escalation(escalation)
+            .with_capture_network(capture_network);
+
+        // Create channel for incremental saving (if storing)
+        let result_tx = if !no_store {
+            let (tx, _rx) = tokio::sync::mpsc::channel(100);
+            Some(tx)
+        } else {
+            None
+        };
+
+        // Set up result sender for incremental saving
+        if let Some(ref tx) = result_tx {
+            options = options.with_result_sender(tx.clone());
+        }
+
+        // Add AI options if extract is enabled
+        if extract {
+            options = options
+                .with_ai_provider(provider)
+                .with_ai_model(model)
+                .with_extract_data(true);
+            if let Some(s) = schema {
+                options = options.with_ai_schema(s);
+            }
+        }
+
+        let mut crawler = match Crawler::new(url, options) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Failed to create crawler: {}", e);
+                return;
+            }
+        };
+
+        // Initialize crawler with optional sitemap/robots discovery
+        if discover_sitemap || discover_robots {
+            println!("Initializing with discovery...");
+            crawler
+                .init_with_discovery(discover_sitemap, discover_robots)
+                .await;
+        } else {
+            crawler.init().await;
+        }
+
+        // Handle AI extraction vs basic crawl
+        if extract {
+            // AI-assisted crawl
+            handle_crawl_with_ai(&mut crawler, schema.unwrap_or("[]"), provider, model).await;
+        } else {
+            // Basic crawl
+            match crawler.crawl().await {
+                Ok(results) => {
+                    println!("\n=== Crawl Results ===");
+                    println!("Total pages crawled: {}", results.len());
+
+                    // Save to database incrementally (each page as it's processed)
+                    if !no_store {
+                        match scrapio_storage::Storage::new(store_path).await {
+                            Ok(storage) => {
+                                for result in &results {
+                                    // Save immediately after each page is processed
+                                    let _ = storage
+                                        .save_result(
+                                            &result.url,
+                                            result.status,
+                                            result.title.as_deref(),
+                                            "",
+                                            &[],
+                                        )
+                                        .await;
+
+                                    // Print after saving so we can see progress
+                                    println!("\n- {} (status: {})", result.url, result.status);
+                                    if let Some(ref title) = result.title {
+                                        println!("  Title: {}", title);
+                                    }
+                                    println!("  Depth: {}", result.depth);
+                                    println!("  Links found: {}", result.links_found);
+                                    if let Some(ref error) = result.error {
+                                        println!("  Error: {}", error);
+                                    }
+                                    println!("  ✓ Saved");
                                 }
+                                println!(
+                                    "\n→ Total saved: {} results to {}",
+                                    results.len(),
+                                    store_path
+                                );
+                            }
+                            Err(e) => {
+                                // If storage fails, still print results
+                                for result in &results {
+                                    println!("\n- {} (status: {})", result.url, result.status);
+                                    if let Some(ref title) = result.title {
+                                        println!("  Title: {}", title);
+                                    }
+                                    println!("  Depth: {}", result.depth);
+                                    println!("  Links found: {}", result.links_found);
+                                }
+                                eprintln!("Failed to save to database: {}", e);
                             }
                         }
+                    } else {
+                        // No-store mode - just print results
+                        for result in &results {
+                            println!("\n- {} (status: {})", result.url, result.status);
+                            if let Some(ref title) = result.title {
+                                println!("  Title: {}", title);
+                            }
+                            println!("  Depth: {}", result.depth);
+                            println!("  Links found: {}", result.links_found);
+                        }
                     }
-                    Err(e) => eprintln!("  - {} Error: {}", url, e),
+
+                    println!("\nCrawl complete! Visited {} pages", results.len());
                 }
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                Err(e) => eprintln!("Crawl error: {}", e),
             }
-            current_depth += 1;
         }
-        println!("\nCrawl complete! Visited {} pages", visited.len());
     });
+}
+
+async fn handle_crawl_with_ai(
+    crawler: &mut scrapio_classic::crawler::Crawler,
+    schema: &str,
+    provider: &str,
+    model: &str,
+) {
+    use scrapio_ai::AiConfig;
+    use scrapio_ai::AiScraper;
+
+    println!("AI-assisted crawl with extraction...");
+
+    // First, do basic crawl to discover URLs
+    match crawler.crawl().await {
+        Ok(results) => {
+            if results.is_empty() {
+                println!("No pages found to extract from.");
+                return;
+            }
+
+            println!(
+                "Discovered {} pages, starting AI extraction...",
+                results.len()
+            );
+
+            // Set up AI scraper
+            let mut config = AiConfig::new().with_provider(provider);
+            if !model.is_empty() {
+                config = config.with_model(model);
+            }
+            let ai_scraper = AiScraper::with_config(config);
+
+            // Extract from each page
+            for (i, result) in results.iter().enumerate() {
+                println!(
+                    "\n[{}/{}] Extracting from: {}",
+                    i + 1,
+                    results.len(),
+                    result.url
+                );
+
+                match ai_scraper.scrape(&result.url, schema).await {
+                    Ok(extraction) => {
+                        println!("  Status: {}", extraction.data);
+                        if let Some(ref error) = extraction.provider_error {
+                            println!("  Warning: {}", error);
+                        }
+                    }
+                    Err(e) => {
+                        println!("  Error: {}", e);
+                    }
+                }
+
+                // Rate limit to avoid overwhelming the API
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+
+            println!("\nAI extraction complete!");
+        }
+        Err(e) => eprintln!("Crawl error: {}", e),
+    }
 }
 
 pub fn handle_save(url: &str, database: &str) {
     run_async(async {
         let scraper = Scraper::new();
-        match Storage::new(database).await {
+        match scrapio_storage::Storage::new(database).await {
             Ok(storage) => match scraper.scrape(url).await {
                 Ok(resp) => {
                     let title = resp.title();
@@ -434,7 +628,7 @@ pub fn handle_save(url: &str, database: &str) {
 
 pub fn handle_list(database: &str, limit: usize, output: &str) {
     run_async(async {
-        match Storage::new(database).await {
+        match scrapio_storage::Storage::new(database).await {
             Ok(storage) => match storage.get_all_results(limit).await {
                 Ok(results) => {
                     let format = OutputFormat::from_str(output);
@@ -491,7 +685,6 @@ pub fn handle_browser(
             None => return,
         };
 
-        // Navigate to URL
         match browser.goto(url).await {
             Ok(_) => {
                 println!("Successfully navigated to: {}", url);
@@ -503,7 +696,6 @@ pub fn handle_browser(
             }
         }
 
-        // Execute custom script if provided
         if let Some(script_path) = script
             && let Ok(script_content) = std::fs::read_to_string(script_path)
         {
@@ -513,10 +705,8 @@ pub fn handle_browser(
             }
         }
 
-        // Print page info
         print_page_info(&mut browser).await;
 
-        // Close browser
         if let Err(e) = browser.close().await {
             eprintln!("Warning: Failed to close browser cleanly: {}", e);
         }
