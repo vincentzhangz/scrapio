@@ -387,6 +387,9 @@ pub fn count_forms(response: &Response) -> usize {
 pub fn parse_sitemap(xml: &str) -> Vec<String> {
     let mut urls = Vec::new();
 
+    // Check if this is a sitemap index or urlset
+    let is_sitemap_index = xml.contains("<sitemapindex");
+
     // Simple regex-based sitemap parsing
     // Look for <loc>...</loc> tags
     let loc_pattern = regex::Regex::new(r"<loc>([^<]+)</loc>").ok();
@@ -394,27 +397,162 @@ pub fn parse_sitemap(xml: &str) -> Vec<String> {
     if let Some(re) = loc_pattern {
         for cap in re.captures_iter(xml) {
             if let Some(url) = cap.get(1) {
-                urls.push(url.as_str().to_string());
-            }
-        }
-    }
-
-    // Also check for sitemapindex (nested sitemaps)
-    let index_pattern = regex::Regex::new(r"<loc>([^<]+)</loc>").ok();
-    if let Some(re) = index_pattern {
-        // Check if this is a sitemap index
-        if xml.contains("<sitemapindex") {
-            for cap in re.captures_iter(xml) {
-                if let Some(url) = cap.get(1) {
-                    let url_str = url.as_str();
-                    // Only add .xml URLs from sitemap index
+                let url_str = url.as_str();
+                // For sitemap index, only add .xml URLs
+                // For urlset, add all URLs
+                if is_sitemap_index {
                     if url_str.ends_with(".xml") {
                         urls.push(url_str.to_string());
                     }
+                } else {
+                    urls.push(url_str.to_string());
                 }
             }
         }
     }
 
     urls
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_url_absolute() {
+        assert_eq!(
+            resolve_url("http://example.com/", "https://other.com/page"),
+            "https://other.com/page"
+        );
+    }
+
+    #[test]
+    fn test_resolve_url_relative() {
+        assert_eq!(
+            resolve_url("http://example.com/page/", "about"),
+            "http://example.com/page/about"
+        );
+    }
+
+    #[test]
+    fn test_resolve_url_fragment() {
+        assert_eq!(
+            resolve_url("http://example.com/page", "#section"),
+            "http://example.com/page"
+        );
+    }
+
+    #[test]
+    fn test_resolve_url_root() {
+        assert_eq!(
+            resolve_url("http://example.com", "/about"),
+            "http://example.com/about"
+        );
+    }
+
+    #[test]
+    fn test_is_valid_nav_url() {
+        assert!(is_valid_nav_url("http://example.com"));
+        assert!(is_valid_nav_url("https://example.com"));
+        assert!(is_valid_nav_url("/path"));
+        assert!(!is_valid_nav_url(""));
+        assert!(!is_valid_nav_url("javascript:alert(1)"));
+        assert!(!is_valid_nav_url("mailto:test@example.com"));
+        assert!(!is_valid_nav_url("data:text/html,<h1>"));
+    }
+
+    #[test]
+    fn test_extract_refresh_url_direct() {
+        assert_eq!(
+            extract_refresh_url("http://example.com"),
+            Some("http://example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_refresh_url_with_timeout() {
+        assert_eq!(
+            extract_refresh_url("5;url=http://example.com"),
+            Some("http://example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_refresh_url_invalid() {
+        assert_eq!(extract_refresh_url("javascript:alert(1)"), None);
+    }
+
+    #[test]
+    fn test_parse_sitemap_basic() {
+        let xml = r#"<?xml version="1.0"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>http://example.com/page1</loc></url>
+  <url><loc>http://example.com/page2</loc></url>
+</urlset>"#;
+        let urls = parse_sitemap(xml);
+        assert_eq!(urls.len(), 2);
+        assert!(urls.contains(&"http://example.com/page1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_sitemap_index() {
+        let xml = r#"<?xml version="1.0"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap><loc>http://example.com/sitemap1.xml</loc></sitemap>
+  <sitemap><loc>http://example.com/sitemap2.xml</loc></sitemap>
+</sitemapindex>"#;
+        let urls = parse_sitemap(xml);
+        assert_eq!(urls.len(), 2);
+    }
+
+    #[test]
+    fn test_response_parser_new() {
+        let parser = ResponseParser::new(DiscoverOptions::default());
+        let _ = parser;
+    }
+
+    #[test]
+    fn test_discover_options_all() {
+        let options = DiscoverOptions::all();
+        assert!(options.anchors);
+        assert!(options.forms);
+        assert!(options.scripts);
+        assert!(options.iframes);
+        assert!(options.sitemap);
+        assert!(options.robots);
+    }
+
+    #[test]
+    fn test_discover_options_basic() {
+        let options = DiscoverOptions::basic();
+        assert!(options.anchors);
+        assert!(!options.forms);
+    }
+
+    #[test]
+    fn test_discover_options_standard() {
+        let options = DiscoverOptions::standard();
+        assert!(options.anchors);
+        assert!(options.forms);
+        assert!(options.scripts);
+        assert!(options.redirects);
+    }
+
+    #[test]
+    fn test_discover_options_with_anchors() {
+        let options = DiscoverOptions::default().with_anchors();
+        assert!(options.anchors);
+    }
+
+    #[test]
+    fn test_discover_options_with_forms() {
+        let options = DiscoverOptions::default().with_forms();
+        assert!(options.forms);
+    }
+
+    #[test]
+    fn test_discover_options_with_scripts() {
+        let options = DiscoverOptions::default().with_scripts();
+        assert!(options.scripts);
+    }
 }

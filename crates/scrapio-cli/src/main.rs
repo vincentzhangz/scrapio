@@ -68,6 +68,10 @@ enum Commands {
         sitemap: bool,
         #[arg(long)]
         robots: bool,
+        #[arg(long, default_value_t = true)]
+        respect_robotstxt: bool,
+        #[arg(long)]
+        unsafe_mode: bool,
         #[arg(long, default_value = "scrapio.db")]
         store: String,
         #[arg(long)]
@@ -154,6 +158,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             browser_escalation,
             sitemap,
             robots,
+            respect_robotstxt,
+            unsafe_mode,
             store,
             no_store,
             network,
@@ -169,6 +175,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &browser_escalation,
             sitemap,
             robots,
+            respect_robotstxt,
+            unsafe_mode,
             &store,
             no_store,
             network,

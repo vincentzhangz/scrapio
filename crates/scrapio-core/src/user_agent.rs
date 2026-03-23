@@ -16,20 +16,17 @@ pub enum Browser {
 impl Browser {
     /// Get user agent string for this browser
     pub fn user_agent(self, version: Option<&str>) -> String {
-        let ver = version.unwrap_or("122.0.0.0");
+        let ver = version.unwrap_or("146.0.7680.153");
         match self {
             Browser::Chrome => format!(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{} Safari/537.36",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{} Safari/537.36",
                 ver
             ),
             Browser::Firefox => format!(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/{}",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.2; rv:128.0) Gecko/20100101 Firefox/{}",
                 ver
             ),
-            Browser::Safari => format!(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{} Safari/605.1.15",
-                ver
-            ),
+            Browser::Safari => "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15".to_string(),
             Browser::Edge => format!(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{} Safari/537.36 Edg/{}",
                 ver, ver
@@ -162,17 +159,72 @@ pub mod profiles {
 
     /// iPhone Safari user agent
     pub fn iphone() -> String {
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1".to_string()
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1".to_string()
     }
 
     /// Android Chrome user agent
     pub fn android() -> String {
-        "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36".to_string()
+        "Mozilla/5.0 (Linux; Android 15; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.153 Mobile Safari/537.36".to_string()
     }
 
     /// iPad Safari user agent
     pub fn ipad() -> String {
-        "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 CriOS/122.0.0.0 Mobile/15E148 Safari/604.1".to_string()
+        "Mozilla/5.0 (iPad; CPU OS 26_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 CriOS/146.0.7680.153 Mobile/15E148 Safari/604.1".to_string()
+    }
+
+    /// Collection of pre-defined user agents for different platforms
+    pub mod collection {
+        /// Chrome on Windows 11
+        pub fn chrome_windows() -> String {
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.153 Safari/537.36".to_string()
+        }
+
+        /// Chrome on macOS Sequoia (15.x)
+        pub fn chrome_mac() -> String {
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.153 Safari/537.36".to_string()
+        }
+
+        /// Firefox on Windows 11
+        pub fn firefox_windows() -> String {
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/148.0"
+                .to_string()
+        }
+
+        /// Firefox on macOS Sequoia
+        pub fn firefox_mac() -> String {
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 15.2; rv:128.0) Gecko/20100101 Firefox/148.0"
+                .to_string()
+        }
+
+        /// Safari on macOS Sequoia
+        pub fn safari_mac() -> String {
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15".to_string()
+        }
+
+        /// Edge on Windows 11
+        pub fn edge_windows() -> String {
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.153 Safari/537.36 Edg/146.0.7680.153".to_string()
+        }
+
+        /// Safari on iPhone (iOS 26)
+        pub fn safari_iphone() -> String {
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 26_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1".to_string()
+        }
+
+        /// Safari on iPad (iPadOS 26)
+        pub fn safari_ipad() -> String {
+            "Mozilla/5.0 (iPad; CPU OS 26_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 CriOS/146.0.7680.153 Mobile/15E148 Safari/604.1".to_string()
+        }
+
+        /// Chrome on Android 15
+        pub fn chrome_android() -> String {
+            "Mozilla/5.0 (Linux; Android 15; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.153 Mobile Safari/537.36".to_string()
+        }
+
+        /// Chrome on Linux
+        pub fn chrome_linux() -> String {
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.7680.153 Safari/537.36".to_string()
+        }
     }
 }
 
@@ -205,5 +257,74 @@ mod tests {
         let ua = profiles::iphone();
         assert!(ua.contains("iPhone"));
         assert!(ua.contains("Mobile"));
+    }
+
+    #[test]
+    fn test_firefox_browser() {
+        let ua = Browser::Firefox.user_agent(Some("148.0"));
+        assert!(ua.contains("Firefox/148.0"));
+        assert!(ua.contains("Gecko/20100101"));
+    }
+
+    #[test]
+    fn test_safari_browser() {
+        let ua = Browser::Safari.user_agent(None);
+        assert!(ua.contains("Safari"));
+        assert!(ua.contains("Version/18.2"));
+    }
+
+    #[test]
+    fn test_edge_browser() {
+        let ua = Browser::Edge.user_agent(Some("146.0.7680.153"));
+        assert!(ua.contains("Edg/146.0.7680.153"));
+    }
+
+    #[test]
+    fn test_collection_chrome_windows() {
+        let ua = profiles::collection::chrome_windows();
+        assert!(ua.contains("Chrome/146"));
+        assert!(ua.contains("Windows NT 10.0"));
+    }
+
+    #[test]
+    fn test_collection_chrome_mac() {
+        let ua = profiles::collection::chrome_mac();
+        assert!(ua.contains("Chrome/146"));
+        assert!(ua.contains("Mac OS X 15"));
+    }
+
+    #[test]
+    fn test_collection_firefox_windows() {
+        let ua = profiles::collection::firefox_windows();
+        assert!(ua.contains("Firefox/148"));
+        assert!(ua.contains("Windows NT 10.0"));
+    }
+
+    #[test]
+    fn test_collection_safari_mac() {
+        let ua = profiles::collection::safari_mac();
+        assert!(ua.contains("Safari/605.1.15"));
+        assert!(ua.contains("Version/18.2"));
+    }
+
+    #[test]
+    fn test_collection_android() {
+        let ua = profiles::collection::chrome_android();
+        assert!(ua.contains("Android 15"));
+        assert!(ua.contains("Mobile Safari"));
+    }
+
+    #[test]
+    fn test_profiles_android() {
+        let ua = profiles::android();
+        assert!(ua.contains("Android"));
+        assert!(ua.contains("Chrome/146"));
+    }
+
+    #[test]
+    fn test_profiles_ipad() {
+        let ua = profiles::ipad();
+        assert!(ua.contains("iPad"));
+        assert!(ua.contains("Safari"));
     }
 }

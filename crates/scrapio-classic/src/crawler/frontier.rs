@@ -1,11 +1,12 @@
 //! Frontier - URL queue management for crawling
 
+use serde::{Deserialize, Serialize};
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// URL source type for tracking discovered URLs
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UrlSource {
     /// Found in anchor tag
     Anchor,
@@ -44,7 +45,7 @@ impl std::fmt::Display for UrlSource {
 }
 
 /// A URL entry in the crawl queue
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrontierEntry {
     /// The URL to crawl
     pub url: String,
@@ -173,6 +174,12 @@ impl Frontier {
     pub async fn len(&self) -> usize {
         let queue = self.queue.read().await;
         queue.len()
+    }
+
+    /// Peek at multiple URLs without removing them
+    pub async fn peek_many(&self, count: usize) -> Vec<FrontierEntry> {
+        let queue = self.queue.read().await;
+        queue.iter().take(count).cloned().collect()
     }
 
     /// Check if a URL has been seen

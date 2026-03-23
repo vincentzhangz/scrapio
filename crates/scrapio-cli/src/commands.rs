@@ -367,6 +367,8 @@ pub fn handle_crawl(
     browser_escalation: &str,
     discover_sitemap: bool,
     discover_robots: bool,
+    respect_robotstxt: bool,
+    unsafe_mode: bool,
     store_path: &str,
     no_store: bool,
     capture_network: bool,
@@ -420,6 +422,13 @@ pub fn handle_crawl(
             .with_rate_limit(10)
             .with_browser_escalation(escalation)
             .with_capture_network(capture_network);
+
+        // Apply unsafe or robots.txt settings
+        if unsafe_mode {
+            options = options.aggressive();
+        } else if !respect_robotstxt {
+            options = options.ignore_robots_txt();
+        }
 
         // Create channel for incremental saving (if storing)
         let result_tx = if !no_store {

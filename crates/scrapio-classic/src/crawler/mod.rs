@@ -8,16 +8,22 @@
 
 pub mod frontier;
 pub mod parser;
+pub mod robots;
 pub mod scope;
+pub mod state;
 pub mod types;
 
 pub use frontier::{Frontier, FrontierEntry, FrontierStats, UrlSource};
 pub use parser::{ResponseParser, count_forms, count_links, parse_sitemap};
+pub use robots::{PolitenessConfig, RobotsTxtManager};
 pub use scope::ScopeValidator;
+pub use state::{CrawlMetadata, CrawlState};
 pub use types::CrawlResult;
 pub use types::*;
 
 use tokio::time::{Duration, sleep};
+
+use self::robots::DomainRateLimiter;
 
 /// Main crawler that orchestrates crawling
 pub struct Crawler {
@@ -26,6 +32,11 @@ pub struct Crawler {
     scope: ScopeValidator,
     parser: ResponseParser,
     results: Vec<CrawlResult>,
+    robots: RobotsTxtManager,
+    rate_limiter: DomainRateLimiter,
+    state: Option<CrawlState>,
+    error_count: usize,
+    backoff_level: u32,
 }
 
 impl Crawler {
@@ -37,12 +48,40 @@ impl Crawler {
         let frontier = Frontier::new();
         let parser = ResponseParser::new(options.discover);
 
+        // Initialize robots.txt manager with latest Chrome user agent
+        let user_agent = scrapio_core::user_agent::UserAgentManager::new()
+            .with_browser(scrapio_core::user_agent::Browser::Chrome);
+        let robots = RobotsTxtManager::new(&user_agent.get_user_agent());
+
+        // Initialize rate limiter with politeness config
+        let politeness = PolitenessConfig {
+            min_delay_ms: options.politeness.min_delay_ms,
+            max_delay_ms: options.politeness.max_delay_ms,
+            respect_crawl_delay: options.politeness.respect_robots_txt,
+            backoff_on_error: options.politeness.backoff_on_error,
+            initial_backoff_ms: options.politeness.initial_backoff_ms,
+            max_backoff_ms: options.politeness.max_backoff_ms,
+        };
+        let rate_limiter = DomainRateLimiter::new(politeness);
+
+        // Initialize state persistence if enabled
+        let state = if options.persistence.enabled {
+            Some(CrawlState::new(&options.persistence.state_dir))
+        } else {
+            None
+        };
+
         Ok(Self {
             options,
             frontier,
             scope,
             parser,
             results: Vec::new(),
+            robots,
+            rate_limiter,
+            state,
+            error_count: 0,
+            backoff_level: 0,
         })
     }
 
@@ -144,10 +183,30 @@ impl Crawler {
     pub async fn crawl(&mut self) -> Result<Vec<CrawlResult>, CrawlerError> {
         let mut pages_crawled = 0;
 
+        // Try to resume from previous state if enabled
+        if self.options.persistence.resume {
+            self.resume().await;
+        }
+
+        // Fetch robots.txt for the root domain
+        if self.options.politeness.respect_robots_txt {
+            let root = self.scope.root_url().to_string();
+            if let Err(e) = self.robots.fetch(&root).await {
+                println!("  → Warning: Failed to fetch robots.txt: {}", e);
+            }
+        }
+
         while !self.frontier.is_empty().await {
             // Check max pages limit
             if pages_crawled >= self.options.max_pages {
                 break;
+            }
+
+            // Check if we're in backoff mode
+            if self.backoff_level > 0 && self.options.politeness.backoff_on_error {
+                let backoff = self.rate_limiter.calculate_backoff(self.backoff_level);
+                println!("  → Backing off for {}ms", backoff.as_millis());
+                sleep(backoff).await;
             }
 
             // Get batch of URLs to process
@@ -176,8 +235,36 @@ impl Crawler {
                     continue;
                 }
 
+                // Apply robots.txt compliance
+                if self.options.politeness.respect_robots_txt {
+                    if !self.robots.is_allowed(&entry.url).await {
+                        println!("  → Blocked by robots.txt: {}", entry.url);
+                        continue;
+                    }
+
+                    // Wait for crawl-delay if specified
+                    self.robots.wait_until_allowed(&entry.url).await;
+                }
+
+                // Apply domain rate limiting (politeness)
+                if let Ok(domain) = url::Url::parse(&entry.url)
+                    && let Some(host) = domain.host_str()
+                {
+                    self.rate_limiter.wait_for(host).await;
+                }
+
                 // Crawl the page
                 let result = self.crawl_page(&entry).await;
+
+                // Handle errors - increase backoff
+                if result.error.is_some() {
+                    self.error_count += 1;
+                    self.backoff_level = (self.backoff_level + 1).min(10);
+                } else {
+                    // Success - decrease backoff
+                    self.backoff_level = self.backoff_level.saturating_sub(1);
+                }
+
                 self.results.push(result.clone());
 
                 // Send to channel if set (for incremental saving)
@@ -185,9 +272,17 @@ impl Crawler {
                     let _ = sender.send(result).await;
                 }
 
+                // Persist state periodically
+                if self.options.persistence.enabled
+                    && pages_crawled > 0
+                    && pages_crawled % self.options.persistence.save_interval == 0
+                {
+                    self.save_state(pages_crawled).await;
+                }
+
                 pages_crawled += 1;
 
-                // Apply rate limiting
+                // Apply rate limiting from options
                 if let Some(rate) = self.options.rate_limit {
                     let delay = Duration::from_millis(1000 / rate);
                     sleep(delay).await;
@@ -197,7 +292,74 @@ impl Crawler {
             }
         }
 
+        // Final save
+        if self.options.persistence.enabled {
+            self.save_state(pages_crawled).await;
+        }
+
         Ok(std::mem::take(&mut self.results))
+    }
+
+    /// Save crawl state for resumption
+    async fn save_state(&self, pages_crawled: usize) {
+        if let (Some(state), Some(name)) = (&self.state, &self.options.persistence.state_name) {
+            let root = self.scope.root_url().to_string();
+
+            // Save frontier (top 1000 entries only to avoid huge files)
+            let entries = self.frontier.peek_many(1000).await;
+            let _ = state.save_frontier(name, &entries).await;
+
+            // Save metadata
+            let meta = CrawlMetadata {
+                root_url: root,
+                started_at: chrono::Utc::now(),
+                last_saved: chrono::Utc::now(),
+                pages_crawled,
+                pages_queued: self.frontier.len().await,
+                error_count: self.error_count,
+            };
+            let _ = state.save_metadata(name, &meta).await;
+
+            // Append latest results
+            let _ = state.save_results(name, &self.results).await;
+
+            println!(
+                "  → Saved state: {} pages crawled, {} queued",
+                pages_crawled,
+                self.frontier.len().await
+            );
+        }
+    }
+
+    /// Resume from previous state
+    async fn resume(&mut self) {
+        if let (Some(state), Some(name)) = (&self.state, &self.options.persistence.state_name) {
+            // Load frontier
+            if let Ok(entries) = state.load_frontier(name).await {
+                for entry in entries {
+                    self.frontier.push(entry).await;
+                }
+                let queued = self.frontier.len().await;
+                if queued > 0 {
+                    println!("  → Resumed with {} queued URLs", queued);
+                }
+            }
+
+            // Load metadata
+            if let Ok(Some(meta)) = state.load_metadata(name).await {
+                println!(
+                    "  → Previous crawl: {} pages, {} errors",
+                    meta.pages_crawled, meta.error_count
+                );
+            }
+
+            // Load existing results
+            if let Ok(results) = state.load_results(name).await
+                && !results.is_empty()
+            {
+                println!("  → Loaded {} previous results", results.len());
+            }
+        }
     }
 
     /// Crawl a single page with optional AI assistance
