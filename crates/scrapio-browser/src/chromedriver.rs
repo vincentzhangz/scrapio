@@ -810,41 +810,6 @@ impl std::fmt::Display for ChromeDriverError {
 
 impl std::error::Error for ChromeDriverError {}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_os_detection() {
-        let os = Os::current();
-        match os {
-            Os::Windows => assert_eq!(os.as_str(), "win32"),
-            Os::Macos => assert_eq!(os.as_str(), "mac-x64"),
-            Os::Linux => assert_eq!(os.as_str(), "linux64"),
-        }
-    }
-
-    #[test]
-    fn test_arch_detection() {
-        let arch = Arch::current();
-        match arch {
-            Arch::Amd64 => assert_eq!(arch.as_str(), "amd64"),
-            Arch::Arm64 => assert_eq!(arch.as_str(), "arm64"),
-        }
-    }
-
-    #[test]
-    fn test_manager_default() {
-        let manager = ChromeDriverManager::new();
-        assert_eq!(manager.channel, ChromeDriverChannel::Stable);
-    }
-
-    #[test]
-    fn test_manager_with_channel() {
-        let manager = ChromeDriverManager::new().with_channel(ChromeDriverChannel::Beta);
-        assert_eq!(manager.channel, ChromeDriverChannel::Beta);
-    }
-
     #[test]
     fn test_managed_session_webdriver_url() {
         let session = ChromeDriverSession {

@@ -1,7 +1,11 @@
-//! Error types
+//! Error types for Scrapio
+//!
+//! Provides a unified error type (`ScrapioError`) used across all crates,
+//! and a convenient `ScrapioResult` type alias.
 
 use thiserror::Error;
 
+/// Main error type for Scrapio operations
 #[derive(Error, Debug)]
 pub enum ScrapioError {
     #[error("HTTP error: {0}")]
@@ -29,4 +33,5 @@ pub enum ScrapioError {
     Browser(String),
 }
 
+/// Result type alias using ScrapioError as the error type
 pub type ScrapioResult<T> = Result<T, ScrapioError>;

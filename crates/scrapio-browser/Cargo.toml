@@ -20,3 +20,4 @@ zip = "8"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros"] }
+urlencoding = "2"

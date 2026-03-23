@@ -1,4 +1,10 @@
 //! Core types and utilities for Scrapio
+//!
+//! This crate provides the foundational types used across all Scrapio crates:
+//! - Error types for unified error handling
+//! - HTTP client utilities
+//! - User agent management with browser profiles
+//! - URL validation utilities
 
 pub mod error;
 pub mod http;

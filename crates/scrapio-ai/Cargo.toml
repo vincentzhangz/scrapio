@@ -10,7 +10,7 @@ default = ["openai"]
 openai = []
 anthropic = []
 ollama = []
-browser = ["dep:scrapio-browser", "dep:tracing"]
+browser = ["dep:scrapio-browser"]
 
 [dependencies]
 regex = "1"
@@ -21,7 +21,7 @@ scrapio-core = { path = "../scrapio-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-tracing = { version = "0.1", optional = true }
+tracing = "0.1"
 
 [dev-dependencies]
 tokio = "1"
