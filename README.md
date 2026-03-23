@@ -204,8 +204,14 @@ scrapio list --database scrapio.db
 ### Browser Automation
 
 ```bash
-# Basic browser automation (requires ChromeDriver)
+# Basic browser automation (uses Chrome by default)
 scrapio browser https://rust-lang.org --headless
+
+# Use Firefox
+scrapio browser https://rust-lang.org --browser firefox
+
+# Use Edge
+scrapio browser https://rust-lang.org --browser edge
 
 # With stealth mode
 scrapio browser https://rust-lang.org --stealth full
@@ -217,36 +223,55 @@ scrapio browser https://rust-lang.org --headless=false
 scrapio browser https://rust-lang.org --script myscript.js
 ```
 
+**Supported Browsers:**
+- `chrome` (default, port 9515)
+- `firefox` (port 4444)
+- `edge` (port 9516)
+
 **Stealth Levels:**
 - `basic` - Removes navigator.webdriver flag
 - `advanced` - Canvas fingerprint randomization, WebGL spoofing
 - `full` - Viewport randomization, timezone/locale settings
 
-**Note:** ChromeDriver is automatically downloaded and managed by the `ChromeDriverManager`. The browser command will automatically download the correct ChromeDriver version for your Chrome browser.
+**Note:** The WebDriver is automatically downloaded and managed by the `DriverManager`. The browser command will automatically download the correct driver for your browser.
 
-For programmatic usage, you can also use ChromeDriverManager directly:
+For programmatic usage, you can use `DriverManager` directly:
 
 ```rust
-use scrapio_browser::{ChromeDriverManager, ChromeDriverChannel};
+use scrapio_browser::{DriverManager, DriverChannel};
 use scrapio_runtime::{Runtime, TokioRuntime};
 
 fn main() {
     let runtime = TokioRuntime::default();
     runtime.block_on(async {
-        let mut manager = ChromeDriverManager::new()
-            .with_channel(ChromeDriverChannel::Stable);
+        // Use Chrome (default)
+        let mut manager = DriverManager::new()
+            .with_channel(DriverChannel::Stable);
+
+        // Or use Firefox
+        // let mut manager = DriverManager::firefox();
 
         // Or specify a version manually
-        // let mut manager = ChromeDriverManager::new()
+        // let mut manager = DriverManager::new()
         //     .with_version("146.0.7680.72");
 
-        // Download and start ChromeDriver automatically
+        // Download and start driver automatically
         match manager.download_and_start(9515).await {
-            Ok(_child) => println!("ChromeDriver started on port 9515"),
+            Ok(_child) => println!("Driver started on port 9515"),
             Err(e) => eprintln!("Failed: {}", e),
         }
     });
 }
+```
+
+For browser-specific capabilities:
+
+```rust
+use scrapio_browser::{StealthBrowser, BrowserType, StealthConfig, StealthLevel};
+
+let browser = StealthBrowser::with_browser_type(BrowserType::Firefox)
+    .headless(true)
+    .stealth(StealthConfig::new(StealthLevel::Basic));
 ```
 
 ### Start API Server
@@ -556,6 +581,7 @@ Options:
   --headless         Run in headless mode (default: true)
   --stealth <LEVEL>  Stealth level: basic, advanced, full
   --script <PATH>    JavaScript file to execute
+  --browser <BROWSER> Browser type: chrome, firefox, edge (default: chrome)
 ```
 
 ### User Agent Management

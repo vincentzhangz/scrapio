@@ -108,6 +108,8 @@ enum Commands {
         script: Option<String>,
         #[arg(long)]
         driver_path: Option<String>,
+        #[arg(long, default_value = "chrome")]
+        browser: String,
     },
     Version,
 }
@@ -199,6 +201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stealth,
             script,
             driver_path,
+            browser,
         } => {
             commands::handle_browser(
                 &url,
@@ -206,6 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 stealth.as_deref(),
                 script.as_deref(),
                 driver_path.as_deref(),
+                &browser,
             );
         }
         Commands::Version => {

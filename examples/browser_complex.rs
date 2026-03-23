@@ -1,8 +1,6 @@
-//! Complex browser automation example with ChromeDriverManager, stealth, screenshots, and element interaction
+//! Complex browser automation example with DriverManager, stealth, screenshots, and element interaction
 
-use scrapio_browser::{
-    ChromeDriverChannel, ChromeDriverManager, StealthBrowser, StealthConfig, StealthLevel,
-};
+use scrapio_browser::{DriverChannel, DriverManager, StealthBrowser, StealthConfig, StealthLevel};
 use scrapio_core::{Browser, UserAgentManager};
 use scrapio_runtime::{Runtime, TokioRuntime};
 
@@ -11,22 +9,21 @@ fn main() {
     runtime.block_on(async {
         println!("=== Complex Browser Automation Example ===\n");
 
-        // Step 1: Setup ChromeDriver with auto-download
-        println!("--- Step 1: Setup ChromeDriver ---");
-        let mut driver_manager =
-            ChromeDriverManager::new().with_channel(ChromeDriverChannel::Stable);
+        // Step 1: Setup driver with auto-download
+        println!("--- Step 1: Setup Driver ---");
+        let mut driver_manager = DriverManager::new().with_channel(DriverChannel::Stable);
 
         // Optional: Use specific version
-        // let mut driver_manager = ChromeDriverManager::new()
+        // let mut driver_manager = DriverManager::new()
         //     .with_version("146.0.7680.72");
 
         match driver_manager.download_and_start(9515).await {
             Ok(_child) => {
-                println!("ChromeDriver started on port 9515");
+                println!("Driver started on port 9515");
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
             Err(e) => {
-                eprintln!("Failed to start ChromeDriver: {}", e);
+                eprintln!("Failed to start driver: {}", e);
                 return;
             }
         }

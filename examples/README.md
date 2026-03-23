@@ -36,10 +36,10 @@ AI-powered scraping with Ollama (local LLM).
 Custom spider implementation for crawling websites.
 
 ### browser
-Browser automation with stealth mode using WebDriver. Uses ChromeDriverManager to automatically download and manage ChromeDriver.
+Browser automation with stealth mode using WebDriver. Uses `DriverManager` to automatically download and manage the appropriate WebDriver. Supports Chrome, Firefox, and Edge.
 
 ### browser_complex
-More advanced browser automation example demonstrating click, scroll, and screenshot interactions.
+More advanced browser automation example demonstrating click, scroll, and screenshot interactions. Supports multiple browsers through `BrowserType`.
 
 ### ralph
 Ralph loop example - iterates through multiple extraction targets until all are completed. Inspired by the Ralph agent pattern. Uses AI to navigate and extract different elements from the page in sequence.

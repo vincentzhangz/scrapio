@@ -1,6 +1,6 @@
-//! Browser automation example with stealth mode and automatic ChromeDriver management
+//! Browser automation example with stealth mode and automatic driver management
 
-use scrapio_browser::{ChromeDriverManager, StealthBrowser, StealthLevel};
+use scrapio_browser::{DriverManager, StealthBrowser, StealthLevel};
 use scrapio_core::{UserAgentManager, profiles};
 use scrapio_runtime::{Runtime, TokioRuntime};
 
@@ -9,21 +9,21 @@ fn main() {
     runtime.block_on(async {
         println!("Starting browser automation example...\n");
 
-        // Step 1: Download and start ChromeDriver automatically
-        println!("=== Step 1: Setup ChromeDriver ===");
-        let mut driver_manager = ChromeDriverManager::new();
+        // Step 1: Download and start driver automatically
+        println!("=== Step 1: Setup Driver ===");
+        let mut driver_manager = DriverManager::new();
 
         // Optional: Set specific version (or leave empty for latest stable)
         // driver_manager = driver_manager.with_version("146.0.7680.72");
 
         match driver_manager.download_and_start(9515).await {
             Ok(_child) => {
-                println!("ChromeDriver started successfully on port 9515");
-                // Give ChromeDriver time to start
+                println!("Driver started successfully on port 9515");
+                // Give driver time to start
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
             Err(e) => {
-                eprintln!("Failed to start ChromeDriver: {}", e);
+                eprintln!("Failed to start driver: {}", e);
                 return;
             }
         }

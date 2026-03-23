@@ -1,7 +1,8 @@
 //! Browser management and automation for Scrapio
 //!
 //! This module provides the main `StealthBrowser` struct for controlling
-//! a browser with stealth anti-detection features.
+//! a browser with stealth anti-detection features. It supports multiple
+//! browser types through a pluggable capabilities system.
 
 use fantoccini::{Client, ClientBuilder};
 use scrapio_core::error::ScrapioError;
@@ -27,17 +28,357 @@ pub struct NetworkRequest {
     pub timestamp: u64,
 }
 
+/// Browser type enumeration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowserType {
+    /// Google Chrome (default)
+    #[default]
+    Chrome,
+    /// Mozilla Firefox
+    Firefox,
+    /// Microsoft Edge
+    Edge,
+}
+
+impl BrowserType {
+    /// Get the default WebDriver port for this browser type
+    pub fn default_port(&self) -> u16 {
+        match self {
+            BrowserType::Chrome => 9515,
+            BrowserType::Firefox => 4444,
+            BrowserType::Edge => 9516,
+        }
+    }
+
+    /// Get the default WebDriver URL for this browser type
+    pub fn default_webdriver_url(&self) -> String {
+        format!("http://localhost:{}", self.default_port())
+    }
+
+    /// Parse from string (case-insensitive)
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "chrome" | "chromium" => Some(BrowserType::Chrome),
+            "firefox" | "ff" | "gecko" => Some(BrowserType::Firefox),
+            "edge" | "msedge" => Some(BrowserType::Edge),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for BrowserType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BrowserType::Chrome => write!(f, "chrome"),
+            BrowserType::Firefox => write!(f, "firefox"),
+            BrowserType::Edge => write!(f, "edge"),
+        }
+    }
+}
+
+/// Browser capabilities trait - implement this to add support for new browsers
+pub trait BrowserCapabilities: Send + Sync + std::fmt::Debug {
+    /// Get the browser name for WebDriver capabilities
+    fn browser_name(&self) -> &str;
+
+    /// Get the WebDriver options key (e.g., "goog:chromeOptions", "moz:firefoxOptions")
+    fn options_key(&self) -> &str;
+
+    /// Build browser-specific arguments
+    fn build_args(&self, config: &BrowserConfig) -> Vec<Value>;
+
+    /// Build browser options (binary path, etc.)
+    fn build_options(&self, config: &BrowserConfig) -> serde_json::Map<String, Value>;
+
+    /// Whether this browser supports stealth patching at the binary level
+    fn supports_stealth_patching(&self) -> bool {
+        false
+    }
+
+    /// Get the default WebDriver port
+    fn default_port(&self) -> u16 {
+        9515
+    }
+}
+
+/// Chrome browser capabilities
+#[derive(Debug, Default)]
+pub struct ChromeCapabilities;
+
+impl BrowserCapabilities for ChromeCapabilities {
+    fn browser_name(&self) -> &str {
+        "chrome"
+    }
+
+    fn options_key(&self) -> &str {
+        "goog:chromeOptions"
+    }
+
+    fn build_args(&self, config: &BrowserConfig) -> Vec<Value> {
+        let mut args: Vec<Value> = vec![
+            Value::String("--no-sandbox".to_string()),
+            Value::String("--disable-dev-shm-usage".to_string()),
+            Value::String("--disable-blink-features=AutomationControlled".to_string()),
+        ];
+
+        if config.headless {
+            args.push(Value::String("--headless=new".to_string()));
+            args.push(Value::String("--disable-gpu".to_string()));
+        }
+
+        // Add window size if specified
+        if let Some((width, height)) = config.window_size {
+            args.push(Value::String(format!("--window-size={},{}", width, height)));
+        }
+
+        // Add custom arguments
+        for arg in &config.args {
+            args.push(Value::String(arg.clone()));
+        }
+
+        // Add user agent if stealth is configured
+        if let Some(ref stealth) = config.stealth
+            && let Some(ua) = stealth.get_user_agent()
+        {
+            args.push(Value::String(format!("--user-agent={}", ua)));
+        }
+
+        args
+    }
+
+    fn build_options(&self, config: &BrowserConfig) -> serde_json::Map<String, Value> {
+        let mut options = serde_json::Map::new();
+        options.insert("args".to_string(), Value::Array(self.build_args(config)));
+
+        if let Some(ref path) = config.browser_path {
+            options.insert(
+                "binary".to_string(),
+                Value::String(path.display().to_string()),
+            );
+        }
+
+        options
+    }
+
+    fn supports_stealth_patching(&self) -> bool {
+        true
+    }
+
+    fn default_port(&self) -> u16 {
+        9515
+    }
+}
+
+/// Firefox browser capabilities
+#[derive(Debug, Default)]
+pub struct FirefoxCapabilities;
+
+impl BrowserCapabilities for FirefoxCapabilities {
+    fn browser_name(&self) -> &str {
+        "firefox"
+    }
+
+    fn options_key(&self) -> &str {
+        "moz:firefoxOptions"
+    }
+
+    fn build_args(&self, config: &BrowserConfig) -> Vec<Value> {
+        let mut args: Vec<Value> = Vec::new();
+
+        // Firefox uses different arguments
+        if config.headless {
+            args.push(Value::String("--headless".to_string()));
+        }
+
+        // Add window size if specified
+        if let Some((width, height)) = config.window_size {
+            args.push(Value::String(format!("--width={}", width)));
+            args.push(Value::String(format!("--height={}", height)));
+        }
+
+        // Add custom arguments
+        for arg in &config.args {
+            // Convert Chrome-style args to Firefox if needed
+            if arg.starts_with("--user-agent=") {
+                // Skip, will be set via prefs
+                continue;
+            }
+            args.push(Value::String(arg.clone()));
+        }
+
+        args
+    }
+
+    fn build_options(&self, config: &BrowserConfig) -> serde_json::Map<String, Value> {
+        let mut options = serde_json::Map::new();
+
+        // Build args
+        options.insert("args".to_string(), Value::Array(self.build_args(config)));
+
+        // Firefox binary path
+        if let Some(ref path) = config.browser_path {
+            options.insert(
+                "binary".to_string(),
+                Value::String(path.display().to_string()),
+            );
+        }
+
+        // Build prefs for stealth settings
+        let mut prefs = serde_json::Map::new();
+
+        // Set custom user agent via prefs if stealth is configured
+        if let Some(ref stealth) = config.stealth
+            && let Some(ua) = stealth.get_user_agent()
+        {
+            prefs.insert("general.useragent.override".to_string(), Value::String(ua));
+        }
+
+        // Set Firefox-specific stealth prefs
+        prefs.insert(
+            "privacy.resistFingerprinting".to_string(),
+            Value::Bool(true),
+        );
+        prefs.insert("webgl.disabled".to_string(), Value::Bool(true));
+
+        if !prefs.is_empty() {
+            options.insert("prefs".to_string(), Value::Object(prefs));
+        }
+
+        options
+    }
+
+    fn supports_stealth_patching(&self) -> bool {
+        false // Firefox doesn't need binary patching
+    }
+
+    fn default_port(&self) -> u16 {
+        4444
+    }
+}
+
+/// Edge browser capabilities
+#[derive(Debug, Default)]
+pub struct EdgeCapabilities;
+
+impl BrowserCapabilities for EdgeCapabilities {
+    fn browser_name(&self) -> &str {
+        "msedge"
+    }
+
+    fn options_key(&self) -> &str {
+        "ms:edgeOptions"
+    }
+
+    fn build_args(&self, config: &BrowserConfig) -> Vec<Value> {
+        let mut args: Vec<Value> = vec![
+            Value::String("--no-sandbox".to_string()),
+            Value::String("--disable-dev-shm-usage".to_string()),
+            Value::String("--disable-blink-features=AutomationControlled".to_string()),
+        ];
+
+        if config.headless {
+            args.push(Value::String("--headless=new".to_string()));
+            args.push(Value::String("--disable-gpu".to_string()));
+        }
+
+        // Add window size if specified
+        if let Some((width, height)) = config.window_size {
+            args.push(Value::String(format!("--window-size={},{}", width, height)));
+        }
+
+        // Add custom arguments
+        for arg in &config.args {
+            args.push(Value::String(arg.clone()));
+        }
+
+        // Add user agent if stealth is configured
+        if let Some(ref stealth) = config.stealth
+            && let Some(ua) = stealth.get_user_agent()
+        {
+            args.push(Value::String(format!("--user-agent={}", ua)));
+        }
+
+        args
+    }
+
+    fn build_options(&self, config: &BrowserConfig) -> serde_json::Map<String, Value> {
+        let mut options = serde_json::Map::new();
+        options.insert("args".to_string(), Value::Array(self.build_args(config)));
+
+        if let Some(ref path) = config.browser_path {
+            options.insert(
+                "binary".to_string(),
+                Value::String(path.display().to_string()),
+            );
+        }
+
+        options
+    }
+
+    fn supports_stealth_patching(&self) -> bool {
+        false // Edge is Chromium-based but ChromeDriver patches should work
+    }
+
+    fn default_port(&self) -> u16 {
+        9516
+    }
+}
+
+/// Get capabilities for a browser type
+pub fn get_capabilities(browser_type: BrowserType) -> Box<dyn BrowserCapabilities> {
+    match browser_type {
+        BrowserType::Chrome => Box::new(ChromeCapabilities),
+        BrowserType::Firefox => Box::new(FirefoxCapabilities),
+        BrowserType::Edge => Box::new(EdgeCapabilities),
+    }
+}
+
+/// Configuration for the browser
+#[derive(Debug, Clone)]
+pub struct BrowserConfig {
+    /// Whether to run browser in headless mode
+    pub headless: bool,
+    /// Stealth configuration
+    pub stealth: Option<StealthConfig>,
+    /// Path to browser binary
+    pub browser_path: Option<PathBuf>,
+    /// Path to WebDriver
+    pub driver_path: Option<PathBuf>,
+    /// Additional browser arguments
+    pub args: Vec<String>,
+    /// Page load timeout
+    pub timeout: Duration,
+    /// Window size (width, height)
+    pub window_size: Option<(u32, u32)>,
+}
+
+impl Default for BrowserConfig {
+    fn default() -> Self {
+        Self {
+            headless: true,
+            stealth: Some(StealthConfig::default()),
+            browser_path: None,
+            driver_path: None,
+            args: Vec::new(),
+            timeout: Duration::from_secs(30),
+            window_size: Some((1920, 1080)),
+        }
+    }
+}
+
 /// A stealth browser instance for automated web browsing
 ///
 /// # Example
 ///
 /// ```ignore
-/// use scrapio_browser::{StealthBrowser, StealthConfig, StealthLevel};
+/// use scrapio_browser::{StealthBrowser, StealthConfig, StealthLevel, BrowserType};
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let mut browser = StealthBrowser::new()
 ///         .headless(true)
+///         .browser_type(BrowserType::Firefox)
 ///         .stealth(StealthConfig::new(StealthLevel::Basic))?;
 ///
 ///     browser.goto("https://www.rust-lang.org").await?;
@@ -53,48 +394,24 @@ pub struct StealthBrowser {
     client: OnceCell<Client>,
     config: BrowserConfig,
     webdriver_url: String,
-}
-
-/// Configuration for the browser
-#[derive(Debug, Clone)]
-struct BrowserConfig {
-    /// Whether to run browser in headless mode
-    pub headless: bool,
-    /// Stealth configuration
-    pub stealth: Option<StealthConfig>,
-    /// Path to Chrome binary
-    pub chrome_path: Option<PathBuf>,
-    /// Path to ChromeDriver
-    pub driver_path: Option<PathBuf>,
-    /// Additional browser arguments
-    pub args: Vec<String>,
-    /// Page load timeout
-    pub timeout: Duration,
-    /// Window size (width, height)
-    pub window_size: Option<(u32, u32)>,
-}
-
-impl Default for BrowserConfig {
-    fn default() -> Self {
-        Self {
-            headless: true,
-            stealth: Some(StealthConfig::default()),
-            chrome_path: None,
-            driver_path: None,
-            args: Vec::new(),
-            timeout: Duration::from_secs(30),
-            window_size: Some((1920, 1080)),
-        }
-    }
+    browser_type: BrowserType,
+    capabilities: Box<dyn BrowserCapabilities>,
 }
 
 impl StealthBrowser {
-    /// Create a new StealthBrowser with default configuration
+    /// Create a new StealthBrowser with default configuration (Chrome)
     pub fn new() -> Self {
+        Self::with_browser_type(BrowserType::Chrome)
+    }
+
+    /// Create a new StealthBrowser with explicit browser type
+    pub fn with_browser_type(browser_type: BrowserType) -> Self {
         Self {
             client: OnceCell::new(),
             config: BrowserConfig::default(),
-            webdriver_url: "http://localhost:9515".to_string(),
+            webdriver_url: browser_type.default_webdriver_url(),
+            browser_type,
+            capabilities: get_capabilities(browser_type),
         }
     }
 
@@ -104,7 +421,38 @@ impl StealthBrowser {
             client: OnceCell::new(),
             config: BrowserConfig::default(),
             webdriver_url: url.into(),
+            browser_type: BrowserType::Chrome,
+            capabilities: Box::new(ChromeCapabilities),
         }
+    }
+
+    /// Create a new StealthBrowser with explicit WebDriver URL and browser type
+    pub fn with_webdriver_and_type(url: impl Into<String>, browser_type: BrowserType) -> Self {
+        Self {
+            client: OnceCell::new(),
+            config: BrowserConfig::default(),
+            webdriver_url: url.into(),
+            browser_type,
+            capabilities: get_capabilities(browser_type),
+        }
+    }
+
+    /// Get the browser type
+    pub fn get_browser_type(&self) -> BrowserType {
+        self.browser_type
+    }
+
+    /// Set the browser type (requires WebDriver to be running for that browser)
+    pub fn set_browser_type(mut self, browser_type: BrowserType) -> Self {
+        self.browser_type = browser_type;
+        self.capabilities = get_capabilities(browser_type);
+        // Update WebDriver URL if using default
+        if self.webdriver_url == BrowserType::Chrome.default_webdriver_url()
+            || self.webdriver_url == BrowserType::default().default_webdriver_url()
+        {
+            self.webdriver_url = browser_type.default_webdriver_url();
+        }
+        self
     }
 
     /// Set the browser to run in headless mode
@@ -125,13 +473,19 @@ impl StealthBrowser {
         self
     }
 
-    /// Set path to Chrome binary
-    pub fn chrome_path(mut self, path: PathBuf) -> Self {
-        self.config.chrome_path = Some(path);
+    /// Set path to browser binary
+    pub fn browser_path(mut self, path: PathBuf) -> Self {
+        self.config.browser_path = Some(path);
         self
     }
 
-    /// Set path to ChromeDriver
+    /// Set path to browser binary (alias for browser_path for backward compatibility)
+    #[deprecated(since = "0.2.0", note = "Use browser_path() instead")]
+    pub fn chrome_path(self, path: PathBuf) -> Self {
+        self.browser_path(path)
+    }
+
+    /// Set path to WebDriver
     pub fn driver_path(mut self, path: PathBuf) -> Self {
         self.config.driver_path = Some(path);
         self
@@ -161,7 +515,7 @@ impl StealthBrowser {
             return Ok(client);
         }
 
-        // Build Chrome capabilities
+        // Build browser capabilities
         let mut builder = ClientBuilder::native();
         builder.capabilities(self.build_capabilities());
 
@@ -188,68 +542,23 @@ impl StealthBrowser {
         Ok(self.client.get().unwrap())
     }
 
-    /// Build Chrome arguments as JSON values
-    fn build_chrome_args_as_values(&self) -> Vec<Value> {
-        let mut args: Vec<Value> = vec![
-            Value::String("--no-sandbox".to_string()),
-            Value::String("--disable-dev-shm-usage".to_string()),
-            Value::String("--disable-blink-features=AutomationControlled".to_string()),
-        ];
-
-        if self.config.headless {
-            args.push(Value::String("--headless=new".to_string()));
-            args.push(Value::String("--disable-gpu".to_string()));
-        }
-
-        // Add window size if specified
-        if let Some((width, height)) = self.config.window_size {
-            args.push(Value::String(format!("--window-size={},{}", width, height)));
-        }
-
-        // Add custom arguments
-        for arg in &self.config.args {
-            args.push(Value::String(arg.clone()));
-        }
-
-        args
-    }
-
     fn build_capabilities(&self) -> fantoccini::wd::Capabilities {
         let mut caps = fantoccini::wd::Capabilities::new();
-        let mut chrome_options = serde_json::Map::new();
+        let options = self.capabilities.build_options(&self.config);
 
-        chrome_options.insert(
-            "args".to_string(),
-            Value::Array(self.build_chrome_args_as_values()),
-        );
-
-        if let Some(path) = &self.config.chrome_path {
-            chrome_options.insert(
-                "binary".to_string(),
-                Value::String(path.display().to_string()),
-            );
-        }
-
-        if let Some(ref stealth) = self.config.stealth
-            && let Some(ua) = stealth.get_user_agent()
-        {
-            let args = chrome_options
-                .entry("args".to_string())
-                .or_insert_with(|| Value::Array(Vec::new()));
-
-            if let Some(args) = args.as_array_mut() {
-                args.push(Value::String(format!("--user-agent={}", ua)));
-            }
-        }
-
+        // Set browser name
         caps.insert(
             "browserName".to_string(),
-            Value::String("chrome".to_string()),
+            Value::String(self.capabilities.browser_name().to_string()),
         );
+
+        // Set browser-specific options
         caps.insert(
-            "goog:chromeOptions".to_string(),
-            Value::Object(chrome_options),
+            self.capabilities.options_key().to_string(),
+            Value::Object(options),
         );
+
+        // Set timeouts
         caps.insert(
             "timeouts".to_string(),
             serde_json::json!({
@@ -737,10 +1046,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_browser_type_parse() {
+        assert_eq!(BrowserType::parse("chrome"), Some(BrowserType::Chrome));
+        assert_eq!(BrowserType::parse("CHROME"), Some(BrowserType::Chrome));
+        assert_eq!(BrowserType::parse("firefox"), Some(BrowserType::Firefox));
+        assert_eq!(BrowserType::parse("Firefox"), Some(BrowserType::Firefox));
+        assert_eq!(BrowserType::parse("edge"), Some(BrowserType::Edge));
+        assert_eq!(BrowserType::parse("invalid"), None);
+    }
+
+    #[test]
+    fn test_browser_type_default_port() {
+        assert_eq!(BrowserType::Chrome.default_port(), 9515);
+        assert_eq!(BrowserType::Firefox.default_port(), 4444);
+        assert_eq!(BrowserType::Edge.default_port(), 9516);
+    }
+
+    #[test]
     fn test_stealth_browser_default() {
         let browser = StealthBrowser::new();
         assert!(browser.config.headless);
         assert!(browser.config.stealth.is_some());
+        assert_eq!(browser.browser_type, BrowserType::Chrome);
+    }
+
+    #[test]
+    fn test_stealth_browser_with_browser_type() {
+        let browser = StealthBrowser::with_browser_type(BrowserType::Firefox);
+        assert_eq!(browser.browser_type, BrowserType::Firefox);
+        assert_eq!(browser.webdriver_url, "http://localhost:4444");
     }
 
     #[test]
@@ -762,25 +1096,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_chrome_args() {
-        let browser = StealthBrowser::new().headless(true).window_size(1920, 1080);
-
-        let args = browser.build_chrome_args_as_values();
-        let args_str: Vec<String> = args
-            .iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect();
-        assert!(args_str.contains(&"--no-sandbox".to_string()));
-        assert!(args_str.contains(&"--headless=new".to_string()));
-        assert!(
-            args_str
-                .iter()
-                .any(|s| s.contains("1920") && s.contains("1080"))
-        );
-    }
-
-    #[test]
-    fn test_build_capabilities_includes_chrome_options() {
+    fn test_build_capabilities_chrome() {
         let browser = StealthBrowser::new().headless(true).window_size(1280, 720);
         let caps = browser.build_capabilities();
 
@@ -789,6 +1105,21 @@ mod tests {
             Some("chrome")
         );
         assert!(caps.contains_key("goog:chromeOptions"));
+        assert!(caps.contains_key("timeouts"));
+    }
+
+    #[test]
+    fn test_build_capabilities_firefox() {
+        let browser = StealthBrowser::with_browser_type(BrowserType::Firefox)
+            .headless(true)
+            .window_size(1280, 720);
+        let caps = browser.build_capabilities();
+
+        assert_eq!(
+            caps.get("browserName").and_then(Value::as_str),
+            Some("firefox")
+        );
+        assert!(caps.contains_key("moz:firefoxOptions"));
         assert!(caps.contains_key("timeouts"));
     }
 }

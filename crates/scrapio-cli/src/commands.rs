@@ -73,20 +73,25 @@ fn parse_stealth_level(stealth: Option<&str>) -> scrapio_browser::StealthLevel {
     }
 }
 
-async fn start_driver(driver_path: Option<&str>) -> Option<scrapio_browser::ChromeDriverSession> {
-    let result = if let Some(path) = driver_path {
-        scrapio_browser::ChromeDriverSession::start_with(
-            scrapio_browser::ChromeDriverManager::new().with_path(path.into()),
-        )
-        .await
-    } else {
-        scrapio_browser::ChromeDriverSession::start().await
-    };
+async fn start_driver(
+    driver_path: Option<&str>,
+    browser_type: scrapio_browser::BrowserType,
+) -> Option<scrapio_browser::WebDriverSession> {
+    let mut manager = scrapio_browser::DriverManager::with_driver_type(
+        scrapio_browser::DriverType::parse(&browser_type.to_string())
+            .unwrap_or(scrapio_browser::DriverType::Chrome),
+    );
+
+    if let Some(path) = driver_path {
+        manager = manager.with_path(path.into());
+    }
+
+    let result = scrapio_browser::WebDriverSession::start_with(manager).await;
 
     match result {
         Ok(driver) => Some(driver),
         Err(e) => {
-            eprintln!("Failed to start ChromeDriver: {}", e);
+            eprintln!("Failed to start WebDriver: {}", e);
             None
         }
     }
@@ -96,9 +101,11 @@ async fn init_browser(
     driver_url: &str,
     headless: bool,
     stealth_level: scrapio_browser::StealthLevel,
+    browser_type: scrapio_browser::BrowserType,
 ) -> Option<scrapio_browser::StealthBrowser> {
     let mut builder =
-        scrapio_browser::StealthBrowser::with_webdriver(driver_url).headless(headless);
+        scrapio_browser::StealthBrowser::with_webdriver_and_type(driver_url, browser_type)
+            .headless(headless);
 
     if stealth_level != scrapio_browser::StealthLevel::None {
         let config = scrapio_browser::StealthConfig::new(stealth_level);
@@ -679,16 +686,26 @@ pub fn handle_browser(
     stealth: Option<&str>,
     script: Option<&str>,
     driver_path: Option<&str>,
+    browser: &str,
 ) {
+    let browser_type = scrapio_browser::BrowserType::parse(browser)
+        .unwrap_or(scrapio_browser::BrowserType::Chrome);
+
     run_async(async {
         let stealth_level = parse_stealth_level(stealth);
 
-        let driver = match start_driver(driver_path).await {
+        let driver = match start_driver(driver_path, browser_type).await {
             Some(d) => d,
             None => return,
         };
 
-        let mut browser = match init_browser(&driver.webdriver_url(), headless, stealth_level).await
+        let mut browser = match init_browser(
+            &driver.webdriver_url(),
+            headless,
+            stealth_level,
+            browser_type,
+        )
+        .await
         {
             Some(b) => b,
             None => return,
