@@ -1,35 +1,24 @@
 [package]
-name = "scrapio-cli"
+name = "scrapio-mcp"
 version = "0.1.0"
 edition = "2024"
-description = "CLI tool for Scrapio"
+description = "MCP server for Scrapio"
 license = "MIT"
 
-[[bin]]
-name = "scrapio"
-path = "src/main.rs"
-
-[features]
-default = []
-
 [dependencies]
-axum = { version = "0.8", features = ["macros"] }
-clap = { version = "4", features = ["derive", "env"] }
-csv = "1"
-ctrlc = "3"
-reqwest = { version = "0.13", features = ["json"] }
+axum = "0.8"
+http = "1"
+rmcp = { version = "1.3", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 scrapio-ai = { path = "../scrapio-ai", features = ["browser"] }
 scrapio-browser = { path = "../scrapio-browser" }
 scrapio-classic = { path = "../scrapio-classic" }
 scrapio-core = { path = "../scrapio-core" }
-scrapio-mcp = { path = "../scrapio-mcp" }
 scrapio-runtime = { path = "../scrapio-runtime" }
 scrapio-storage = { path = "../scrapio-storage" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tower = "0.5"
+tower = { version = "0.4", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
-tracing-subscriber = "0.3"
-utoipa = { version = "5", features = ["macros"] }
-utoipa-swagger-ui = { version = "9", features = ["axum"] }

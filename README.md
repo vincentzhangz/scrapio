@@ -14,6 +14,7 @@ All-in-one web scraping toolkit with AI and non-AI capabilities.
 - **SQLite Storage** - Persist crawl results
 - **Multiple LLM Providers** - OpenAI, Anthropic, Ollama (local)
 - **Browser Automation** - Stealth browser for JavaScript-rendered content
+- **MCP Server** - Model Context Protocol server for AI client integration
 
 ## Installation
 
@@ -497,6 +498,7 @@ Commands:
   list     List saved results
   serve    Start API server
   browser  Browser automation with stealth mode
+  mcp      Start MCP server for AI client integration
   version  Show version info
 ```
 
@@ -584,6 +586,65 @@ Options:
   --browser <BROWSER> Browser type: chrome, firefox, edge (default: chrome)
 ```
 
+### MCP Command
+
+```
+scrapio mcp [OPTIONS]
+
+Options:
+  --http         Use HTTP transport instead of stdio
+  --host <HOST>  Host to bind to (only for HTTP mode, default: 127.0.0.1)
+  --port <PORT>  Port to bind to (only for HTTP mode, default: 8080)
+```
+
+### MCP Server
+
+Scrapio can be used as an MCP (Model Context Protocol) server, allowing AI clients like Claude Code to invoke scraping tools directly.
+
+#### Stdio Transport (Default)
+
+```bash
+scrapio mcp
+```
+
+This runs the MCP server using stdio transport. Configure Claude Code to use this by adding to your settings:
+
+```json
+{
+  "mcpServers": {
+    "scrapio": {
+      "command": "path/to/scrapio",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+#### HTTP Transport (Remote)
+
+```bash
+# Start MCP server on HTTP
+scrapio mcp --http
+
+# Custom host/port
+scrapio mcp --http --host 0.0.0.0 --port 9000
+```
+
+The MCP endpoint will be at `http://localhost:8080/mcp`.
+
+#### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `classic_scrape` | Scrape a URL using CSS selectors. Returns title, links, and HTML preview. |
+| `ai_scrape` | Scrape a URL using AI-powered extraction with structured output. |
+| `crawl_start` | Start a crawl operation to discover and scrape multiple pages. |
+| `crawl_status` | Get the status of a crawl operation. |
+| `browser_navigate` | Navigate to a URL using a headless browser and get rendered HTML. |
+| `storage_save` | Save a scraping result to storage. |
+| `storage_get` | Get a stored result by ID. |
+| `storage_list` | List all stored results. |
+
 ### User Agent Management
 
 Scrapio provides a `UserAgentManager` for configuring browser user agents:
@@ -617,6 +678,7 @@ scrapio/
 │   ├── scrapio-ai/         # AI-powered scraping
 │   ├── scrapio-storage/    # SQLite storage
 │   ├── scrapio-browser/    # Browser automation with stealth
+│   ├── scrapio-mcp/        # MCP server implementation
 │   └── scrapio-cli/        # CLI binary
 ├── examples/               # Example programs
 └── Cargo.toml

@@ -111,6 +111,18 @@ enum Commands {
         #[arg(long, default_value = "chrome")]
         browser: String,
     },
+    /// Start the MCP server for AI client integration
+    Mcp {
+        /// Use HTTP transport instead of stdio
+        #[arg(long, default_value_t = false)]
+        http: bool,
+        /// Host to bind to (only for HTTP mode)
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        /// Port to bind to (only for HTTP mode)
+        #[arg(long, default_value = "8080")]
+        port: u16,
+    },
     Version,
 }
 
@@ -211,6 +223,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 driver_path.as_deref(),
                 &browser,
             );
+        }
+        Commands::Mcp { http, host, port } => {
+            let runtime = scrapio_runtime::TokioRuntime::default();
+            if http {
+                if let Err(e) = runtime.block_on(async { scrapio_mcp::run_mcp_http_server(host, port).await }) {
+                    eprintln!("MCP HTTP server error: {}", e);
+                }
+            } else {
+                if let Err(e) = runtime.block_on(async { scrapio_mcp::run_mcp_server().await }) {
+                    eprintln!("MCP server error: {}", e);
+                }
+            }
         }
         Commands::Version => {
             println!("scrapio v{}", env!("CARGO_PKG_VERSION"));
