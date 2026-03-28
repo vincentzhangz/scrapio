@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 use scrapio_runtime::Runtime;
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 mod commands;
 mod server;
@@ -14,6 +15,13 @@ struct Cli {
 
     #[arg(long, default_value = "info")]
     log_level: String,
+}
+
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(fmt::layer().with_target(true).with_line_number(true))
+        .with(EnvFilter::from_default_env())
+        .init();
 }
 
 #[derive(Subcommand)]
@@ -127,6 +135,7 @@ enum Commands {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    init_tracing();
     let cli = Cli::parse();
 
     match cli.command {
@@ -227,7 +236,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Mcp { http, host, port } => {
             let runtime = scrapio_runtime::TokioRuntime::default();
             if http {
-                if let Err(e) = runtime.block_on(async { scrapio_mcp::run_mcp_http_server(host, port).await }) {
+                if let Err(e) =
+                    runtime.block_on(async { scrapio_mcp::run_mcp_http_server(host, port).await })
+                {
                     eprintln!("MCP HTTP server error: {}", e);
                 }
             } else {

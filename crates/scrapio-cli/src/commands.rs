@@ -1,5 +1,6 @@
 use scrapio_classic::Scraper;
 use scrapio_runtime::Runtime;
+use tracing::{debug, error, info, instrument};
 
 /// Output format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,11 +20,12 @@ impl OutputFormat {
     }
 }
 
+#[instrument(fields(output_file))]
 fn write_output(content: &str, output_file: Option<&str>) {
     match output_file {
         Some(path) => match std::fs::write(path, content) {
-            Ok(_) => println!("Output saved to: {}", path),
-            Err(e) => eprintln!("Error writing to file: {}", e),
+            Ok(_) => info!("Output saved to: {}", path),
+            Err(e) => error!("Error writing to file: {}", e),
         },
         None => println!("{}", content),
     }
@@ -33,18 +35,24 @@ fn run_async<F: std::future::Future>(f: F) -> F::Output {
     scrapio_runtime::TokioRuntime::default().block_on(f)
 }
 
+#[instrument(fields(url))]
 pub fn handle_classic(url: &str) {
     run_async(async {
+        info!("Starting classic scrape");
         let scraper = Scraper::new();
         match scraper.scrape(url).await {
             Ok(resp) => {
+                info!("Classic scrape completed successfully");
                 println!("Status: {}", resp.status);
                 if let Some(title) = resp.title() {
                     println!("Title: {}", title);
                 }
                 println!("Links: {}", resp.links().len());
             }
-            Err(e) => eprintln!("Error: {}", e),
+            Err(e) => {
+                error!("Scrape error: {}", e);
+                eprintln!("Error: {}", e);
+            }
         }
     });
 }
@@ -147,6 +155,7 @@ async fn print_page_info(browser: &mut scrapio_browser::StealthBrowser) {
 
 #[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
+#[instrument(fields(url, provider, model))]
 pub fn handle_ai(
     url: &str,
     schema: Option<String>,
@@ -161,6 +170,10 @@ pub fn handle_ai(
     output: &str,
     output_file: Option<&str>,
 ) {
+    info!(
+        "Starting AI scraping with provider={}, browser={}",
+        provider, use_browser
+    );
     let options = AiScrapeOptions {
         url: url.to_string(),
         schema,
@@ -189,6 +202,7 @@ pub fn handle_ai(
     }
 }
 
+#[instrument(skip(schema), fields(url, provider, model))]
 fn handle_ai_http(
     url: &str,
     schema: Option<String>,
@@ -198,6 +212,7 @@ fn handle_ai_http(
     output_file: Option<&str>,
 ) {
     run_async(async {
+        info!("Starting AI HTTP scraping");
         let mut config = scrapio_ai::AiConfig::new().with_provider(provider);
         if !model.is_empty() {
             config = config.with_model(model);
@@ -206,6 +221,7 @@ fn handle_ai_http(
         let schema = schema.unwrap_or_else(|| "{}".to_string());
         match scraper.scrape(url, &schema).await {
             Ok(result) => {
+                info!("AI scraping completed successfully");
                 let format = OutputFormat::from_str(output);
                 let output_content = match format {
                     OutputFormat::Json => serde_json::to_string_pretty(&result).unwrap_or_default(),
@@ -246,7 +262,10 @@ fn handle_ai_http(
                 };
                 write_output(&output_content, output_file);
             }
-            Err(e) => eprintln!("Error: {}", e),
+            Err(e) => {
+                error!("AI scraping error: {}", e);
+                eprintln!("Error: {}", e);
+            }
         }
     });
 }
@@ -362,6 +381,7 @@ fn handle_ai_browser(options: AiScrapeOptions) {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[instrument(fields(url, depth, max_pages))]
 pub fn handle_crawl(
     url: &str,
     depth: usize,
@@ -384,6 +404,11 @@ pub fn handle_crawl(
     use scrapio_classic::crawler::{BrowserEscalation, CrawlOptions, Crawler, Scope, ScopeMode};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    info!(
+        "Starting crawl: url={}, depth={}, max_pages={:?}",
+        url, depth, max_pages
+    );
 
     // Use atomic flag for shutdown signaling
     let should_shutdown = Arc::new(AtomicBool::new(false));
@@ -619,7 +644,9 @@ async fn handle_crawl_with_ai(
     }
 }
 
+#[instrument(fields(url, database))]
 pub fn handle_save(url: &str, database: &str) {
+    info!("Saving scrape result to database");
     run_async(async {
         let scraper = Scraper::new();
         match scrapio_storage::Storage::new(database).await {
@@ -631,18 +658,32 @@ pub fn handle_save(url: &str, database: &str) {
                         .save_result(url, resp.status, title.as_deref(), &resp.html, &links)
                         .await
                     {
-                        Ok(id) => println!("Saved result with ID: {}", id),
-                        Err(e) => eprintln!("Save error: {}", e),
+                        Ok(id) => {
+                            info!("Saved result with ID: {}", id);
+                            println!("Saved result with ID: {}", id);
+                        }
+                        Err(e) => {
+                            error!("Save error: {}", e);
+                            eprintln!("Save error: {}", e);
+                        }
                     }
                 }
-                Err(e) => eprintln!("Scrape error: {}", e),
+                Err(e) => {
+                    error!("Scrape error: {}", e);
+                    eprintln!("Scrape error: {}", e);
+                }
             },
-            Err(e) => eprintln!("Database error: {}", e),
+            Err(e) => {
+                error!("Database error: {}", e);
+                eprintln!("Database error: {}", e);
+            }
         }
     });
 }
 
+#[instrument(fields(database, limit))]
 pub fn handle_list(database: &str, limit: usize, output: &str) {
+    debug!("Listing results from database");
     run_async(async {
         match scrapio_storage::Storage::new(database).await {
             Ok(storage) => match storage.get_all_results(limit).await {
@@ -680,6 +721,7 @@ pub fn handle_list(database: &str, limit: usize, output: &str) {
     });
 }
 
+#[instrument(fields(url, browser))]
 pub fn handle_browser(
     url: &str,
     headless: bool,
@@ -688,6 +730,10 @@ pub fn handle_browser(
     driver_path: Option<&str>,
     browser: &str,
 ) {
+    info!(
+        "Starting browser session: browser={}, headless={}",
+        browser, headless
+    );
     let browser_type = scrapio_browser::BrowserType::parse(browser)
         .unwrap_or(scrapio_browser::BrowserType::Chrome);
 
@@ -713,9 +759,11 @@ pub fn handle_browser(
 
         match browser.goto(url).await {
             Ok(_) => {
+                info!("Successfully navigated to: {}", url);
                 println!("Successfully navigated to: {}", url);
             }
             Err(e) => {
+                error!("Failed to navigate: {}", e);
                 eprintln!("Failed to navigate: {}", e);
                 let _ = browser.close().await;
                 return;

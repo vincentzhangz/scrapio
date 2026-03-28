@@ -2,6 +2,7 @@
 
 use scraper::{Html, Selector};
 use scrapio_core::{ScrapioResult, error::*, http::HttpClient};
+use tracing::{debug, info, instrument};
 
 pub mod crawler;
 pub mod pipeline;
@@ -18,16 +19,22 @@ impl Scraper {
         }
     }
 
+    #[instrument(skip(self), fields(url = %url))]
     pub async fn scrape(&self, url: &str) -> ScrapioResult<Response> {
+        info!("Starting classic scrape");
+
         if !scrapio_core::utils::url::is_valid(url) {
             return Err(ScrapioError::Parse(format!("Invalid URL: {}", url)));
         }
 
+        debug!("Sending HTTP request");
         let response = self.http.client().get(url).send().await?;
         let status = response.status().as_u16();
+        debug!(status, "Received HTTP response");
         let html = response.text().await?;
         let document = Html::parse_document(&html);
 
+        info!("Classic scrape completed");
         Ok(Response {
             url: url.to_string(),
             status,

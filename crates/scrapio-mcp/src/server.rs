@@ -3,24 +3,34 @@
 use crate::error::ScrapioMcpError;
 use crate::tools::*;
 use rmcp::{
+    ServerHandler, ServiceExt,
     model::{
-        CallToolRequestParams, Content, InitializeRequestParams, InitializeResult,
-        ListToolsResult, PaginatedRequestParams, ServerCapabilities, Tool,
+        CallToolRequestParams, Content, InitializeRequestParams, InitializeResult, ListToolsResult,
+        PaginatedRequestParams, ServerCapabilities, Tool,
     },
     service::RequestContext,
     transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService},
-    ServerHandler, ServiceExt,
 };
 use std::sync::Arc;
 use tokio::io::{stdin, stdout};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+
+/// Initialize tracing for the MCP server
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(fmt::layer().with_target(true).with_line_number(true))
+        .with(EnvFilter::from_default_env())
+        .init();
+}
 
 /// Convert a serde_json::Value to Arc<JsonObject>
 /// This is needed because Tool::new expects Arc<JsonObject> not serde_json::Value
 fn value_to_json_object(value: serde_json::Value) -> Arc<rmcp::model::JsonObject> {
     match value {
-        serde_json::Value::Object(map) => {
-            Arc::new(map.into_iter().collect::<serde_json::Map<String, serde_json::Value>>())
-        }
+        serde_json::Value::Object(map) => Arc::new(
+            map.into_iter()
+                .collect::<serde_json::Map<String, serde_json::Value>>(),
+        ),
         _ => Arc::new(serde_json::Map::new()),
     }
 }
@@ -281,6 +291,7 @@ impl ServerHandler for ScrapioMcpServer {
 
 /// Run the MCP server with stdio transport.
 pub async fn run_mcp_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    init_tracing();
     let server = ScrapioMcpServer::new();
     let transport = (stdin(), stdout());
     let service = server.serve(transport).await?;
@@ -294,28 +305,25 @@ pub async fn run_mcp_http_server(
     port: u16,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use axum::Router;
-    use tower_http::cors::{Any, CorsLayer};
     use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+    use tower_http::cors::{Any, CorsLayer};
+    use tracing::info;
 
+    init_tracing();
     let server = ScrapioMcpServer::new();
     let config = StreamableHttpServerConfig::default();
-    let mcp_service: StreamableHttpService<_, LocalSessionManager> = StreamableHttpService::new(
-        move || Ok(server.clone()),
-        Default::default(),
-        config,
-    );
+    let mcp_service: StreamableHttpService<_, LocalSessionManager> =
+        StreamableHttpService::new(move || Ok(server.clone()), Default::default(), config);
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = Router::new()
-        .nest_service("/mcp", mcp_service)
-        .layer(cors);
+    let app = Router::new().nest_service("/mcp", mcp_service).layer(cors);
 
     let addr = format!("{}:{}", host, port);
-    println!("Starting MCP HTTP server on http://{}/mcp", addr);
+    info!("Starting MCP HTTP server on http://{}/mcp", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

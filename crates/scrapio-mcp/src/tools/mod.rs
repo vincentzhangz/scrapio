@@ -3,10 +3,11 @@
 #![allow(dead_code)]
 
 use crate::error::ScrapioMcpError;
-use scrapio_classic::Scraper;
 use scrapio_ai::{AiConfig, AiScraper};
+use scrapio_classic::Scraper;
 use scrapio_storage::Storage;
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info, instrument};
 
 /// Input/Output Types
 
@@ -188,9 +189,11 @@ fn default_limit() -> usize {
 
 /// Tool Implementations
 
+#[instrument(skip(input), fields(url = %input.url))]
 pub async fn classic_scrape_impl(
     input: ClassicScrapeInput,
 ) -> Result<ClassicScrapeOutput, ScrapioMcpError> {
+    info!("Executing classic_scrape tool");
     let scraper = Scraper::new();
 
     let resp = scraper
@@ -214,10 +217,13 @@ pub async fn classic_scrape_impl(
         html_preview,
     };
 
+    debug!("classic_scrape completed successfully");
     Ok(output)
 }
 
+#[instrument(skip(input), fields(url = %input.url, provider = %input.provider))]
 pub async fn ai_scrape_impl(input: AiScrapeInput) -> Result<AiScrapeOutput, ScrapioMcpError> {
+    info!("Executing ai_scrape tool");
     let mut config = AiConfig::new().with_provider(&input.provider);
 
     if let Some(ref model) = input.model
@@ -245,9 +251,9 @@ pub async fn ai_scrape_impl(input: AiScrapeInput) -> Result<AiScrapeOutput, Scra
     })
 }
 
-pub async fn crawl_start_impl(
-    _input: CrawlStartInput,
-) -> Result<CrawlStartOutput, ScrapioMcpError> {
+#[instrument(skip(input), fields(url = %input.url))]
+pub async fn crawl_start_impl(input: CrawlStartInput) -> Result<CrawlStartOutput, ScrapioMcpError> {
+    info!("Executing crawl_start tool");
     use std::time::SystemTime;
     let crawl_id = format!(
         "crawl_{}",
@@ -265,9 +271,11 @@ pub async fn crawl_start_impl(
     })
 }
 
+#[instrument(skip(input), fields(crawl_id = %input.crawl_id))]
 pub async fn crawl_status_impl(
     input: CrawlStatusInput,
 ) -> Result<CrawlStatusOutput, ScrapioMcpError> {
+    debug!("Executing crawl_status tool");
     Ok(CrawlStatusOutput {
         crawl_id: input.crawl_id,
         status: "unknown".to_string(),
@@ -277,9 +285,11 @@ pub async fn crawl_status_impl(
     })
 }
 
+#[instrument(skip(input), fields(url = %input.url, browser = %input.browser))]
 pub async fn browser_navigate_impl(
     input: BrowserNavigateInput,
 ) -> Result<BrowserOutput, ScrapioMcpError> {
+    info!("Executing browser_navigate tool");
     use scrapio_browser::{BrowserType, StealthBrowser, StealthConfig, StealthLevel};
 
     let browser_type = BrowserType::parse(&input.browser).unwrap_or(BrowserType::Chrome);
@@ -293,8 +303,8 @@ pub async fn browser_navigate_impl(
         _ => StealthLevel::None,
     };
 
-    let mut builder = StealthBrowser::with_webdriver_and_type(driver_url, browser_type)
-        .headless(input.headless);
+    let mut builder =
+        StealthBrowser::with_webdriver_and_type(driver_url, browser_type).headless(input.headless);
 
     if stealth_level != StealthLevel::None {
         let config = StealthConfig::new(stealth_level);
@@ -326,6 +336,7 @@ pub async fn browser_navigate_impl(
 
     let _ = browser.close().await;
 
+    debug!("browser_navigate completed successfully");
     Ok(BrowserOutput {
         success: true,
         url: Some(url),
@@ -335,9 +346,11 @@ pub async fn browser_navigate_impl(
     })
 }
 
+#[instrument(skip(input), fields(url = %input.url, database = %input.database))]
 pub async fn storage_save_impl(
     input: StorageSaveInput,
 ) -> Result<StorageSaveOutput, ScrapioMcpError> {
+    info!("Executing storage_save tool");
     let storage = Storage::new(&input.database)
         .await
         .map_err(|e| ScrapioMcpError::StorageFailed(e.to_string()))?;
@@ -355,22 +368,19 @@ pub async fn storage_save_impl(
     };
 
     let id = storage
-        .save_result(
-            &input.url,
-            status,
-            title.as_deref(),
-            &input.content,
-            &links,
-        )
+        .save_result(&input.url, status, title.as_deref(), &input.content, &links)
         .await
         .map_err(|e| ScrapioMcpError::StorageFailed(e.to_string()))?;
 
+    debug!(id, "storage_save completed");
     Ok(StorageSaveOutput { id })
 }
 
+#[instrument(skip(input), fields(id, database = %input.database))]
 pub async fn storage_get_impl(
     input: StorageGetInput,
 ) -> Result<Option<StorageResultOutput>, ScrapioMcpError> {
+    debug!("Executing storage_get tool");
     let storage = Storage::new(&input.database)
         .await
         .map_err(|e| ScrapioMcpError::StorageFailed(e.to_string()))?;
@@ -391,9 +401,11 @@ pub async fn storage_get_impl(
     }))
 }
 
+#[instrument(skip(input), fields(limit, database = %input.database))]
 pub async fn storage_list_impl(
     input: StorageListInput,
 ) -> Result<Vec<StorageResultOutput>, ScrapioMcpError> {
+    debug!("Executing storage_list tool");
     let storage = Storage::new(&input.database)
         .await
         .map_err(|e| ScrapioMcpError::StorageFailed(e.to_string()))?;

@@ -6,6 +6,7 @@ use scrapio_core::error::ScrapioError;
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use tracing::{debug, info, instrument};
 
 /// Database storage for crawl results
 pub struct Storage {
@@ -14,8 +15,10 @@ pub struct Storage {
 
 impl Storage {
     /// Create a new storage instance
+    #[instrument(skip(db_path), fields(db_path = %db_path.as_ref().display()))]
     pub async fn new(db_path: impl AsRef<Path>) -> Result<Self, ScrapioError> {
         let path = db_path.as_ref();
+        info!("Initializing storage");
 
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
@@ -34,10 +37,12 @@ impl Storage {
 
         // Initialize tables
         Self::init_tables(&pool).await?;
+        info!("Storage initialized successfully");
 
         Ok(Self { pool })
     }
 
+    #[instrument(skip(pool))]
     async fn init_tables(pool: &SqlitePool) -> Result<(), ScrapioError> {
         sqlx::query(
             r#"
@@ -78,6 +83,7 @@ impl Storage {
     }
 
     /// Save a crawl result
+    #[instrument(skip(self, content, links), fields(url = %url))]
     pub async fn save_result(
         &self,
         url: &str,
@@ -86,6 +92,7 @@ impl Storage {
         content: &str,
         links: &[String],
     ) -> Result<i64, ScrapioError> {
+        debug!("Saving crawl result");
         let result = sqlx::query(
             r#"
             INSERT INTO crawl_results (url, status, title, content, links)
@@ -107,11 +114,15 @@ impl Storage {
         .await
         .map_err(|e| ScrapioError::Storage(e.to_string()))?;
 
-        Ok(result.last_insert_rowid())
+        let id = result.last_insert_rowid();
+        debug!(id, "Crawl result saved");
+        Ok(id)
     }
 
     /// Get crawl result by URL
+    #[instrument(skip(self), fields(url = %url))]
     pub async fn get_result(&self, url: &str) -> Result<Option<CrawlResult>, ScrapioError> {
+        debug!("Fetching crawl result by URL");
         let row = sqlx::query(
             "SELECT id, url, status, title, content, links, crawled_at FROM crawl_results WHERE url = ?"
         )
@@ -124,7 +135,9 @@ impl Storage {
     }
 
     /// Get crawl result by ID
+    #[instrument(skip(self), fields(id))]
     pub async fn get_result_by_id(&self, id: i64) -> Result<Option<CrawlResult>, ScrapioError> {
+        debug!("Fetching crawl result by ID");
         let row = sqlx::query(
             "SELECT id, url, status, title, content, links, crawled_at FROM crawl_results WHERE id = ?"
         )
@@ -137,7 +150,9 @@ impl Storage {
     }
 
     /// Get all crawl results
+    #[instrument(skip(self), fields(limit))]
     pub async fn get_all_results(&self, limit: usize) -> Result<Vec<CrawlResult>, ScrapioError> {
+        debug!("Fetching all crawl results");
         let rows = sqlx::query(
             "SELECT id, url, status, title, content, links, crawled_at FROM crawl_results ORDER BY crawled_at DESC LIMIT ?"
         )
@@ -150,7 +165,9 @@ impl Storage {
     }
 
     /// Record a crawl start
+    #[instrument(skip(self), fields(spider_name = %spider_name))]
     pub async fn record_crawl_start(&self, spider_name: &str) -> Result<i64, ScrapioError> {
+        debug!("Recording crawl start");
         let result = sqlx::query(
             "INSERT INTO crawl_history (spider_name, started_at, status) VALUES (?, datetime('now'), 'running')"
         )
@@ -159,10 +176,13 @@ impl Storage {
         .await
         .map_err(|e| ScrapioError::Storage(e.to_string()))?;
 
-        Ok(result.last_insert_rowid())
+        let id = result.last_insert_rowid();
+        debug!(id, "Crawl start recorded");
+        Ok(id)
     }
 
     /// Record a crawl end
+    #[instrument(skip(self), fields(id, items_count, errors_count))]
     pub async fn record_crawl_end(
         &self,
         id: i64,
@@ -170,6 +190,7 @@ impl Storage {
         errors_count: i64,
         status: &str,
     ) -> Result<(), ScrapioError> {
+        debug!("Recording crawl end");
         sqlx::query(
             "UPDATE crawl_history SET finished_at = datetime('now'), items_count = ?, errors_count = ?, status = ? WHERE id = ?"
         )
@@ -181,6 +202,7 @@ impl Storage {
         .await
         .map_err(|e| ScrapioError::Storage(e.to_string()))?;
 
+        debug!("Crawl end recorded");
         Ok(())
     }
 }

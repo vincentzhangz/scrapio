@@ -6,12 +6,15 @@ use axum::{
     Router,
     routing::{get, post},
 };
+use tracing::info;
 
 use scrapio_storage::Storage;
 
 pub use crate::swagger::{create_swagger_router, get_result, get_results, health, scrape};
 
+#[tracing::instrument(fields(host, port))]
 pub async fn serve_api_server(host: String, port: u16) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Starting API server");
     let storage = Arc::new(
         Storage::new(":memory:")
             .await
@@ -27,12 +30,10 @@ pub async fn serve_api_server(host: String, port: u16) -> Result<(), Box<dyn std
         .with_state(storage);
 
     let addr = format!("{}:{}", host, port);
-    println!("Starting API server on {}", addr);
-    println!();
-    println!("Swagger UI: http://{}/swagger-ui", addr);
-    println!("OpenAPI spec: http://{}/api-docs/openapi.json", addr);
-    println!();
-    println!("Server running at http://{}", addr);
+    info!("Starting API server on {}", addr);
+    info!("Swagger UI: http://{}/swagger-ui", addr);
+    info!("OpenAPI spec: http://{}/api-docs/openapi.json", addr);
+    info!("Server running at http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr)
         .await

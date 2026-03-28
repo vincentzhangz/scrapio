@@ -8,4 +8,4 @@ mod server;
 mod tools;
 
 pub use error::ScrapioMcpError;
-pub use server::{run_mcp_http_server, run_mcp_server, ScrapioMcpServer};
+pub use server::{ScrapioMcpServer, run_mcp_http_server, run_mcp_server};

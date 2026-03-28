@@ -253,10 +253,15 @@ async fn test_clear_and_type() {
     let input = browser.find_element("#field").await.unwrap();
 
     // Clear the field using backspace characters (ignore result)
-    let _ = input.send_keys(&['\u{0008}' as char].iter().collect::<String>().repeat(20)).await;
+    let _ = input
+        .send_keys(&['\u{0008}' as char].iter().collect::<String>().repeat(20))
+        .await;
 
     // Better approach - use JavaScript
-    browser.execute_script("document.getElementById('field').value = '';").await.unwrap();
+    browser
+        .execute_script("document.getElementById('field').value = '';")
+        .await
+        .unwrap();
 
     input.send_keys("new value").await.unwrap();
 
@@ -453,7 +458,9 @@ async fn test_element_in_hidden_container() {
     browser.goto(&data_url).await.unwrap();
 
     // Element inside hidden container - try to click via JS first show
-    let _ = browser.execute_script("document.getElementById('container').style.display = 'block';").await;
+    let _ = browser
+        .execute_script("document.getElementById('container').style.display = 'block';")
+        .await;
 
     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 

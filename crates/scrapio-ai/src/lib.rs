@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::{debug, info, instrument, warn};
 
 use scrapio_core::{
     error::{ScrapioError, ScrapioResult},
@@ -121,6 +122,7 @@ impl AiScraper {
     }
 
     /// Scrape with additional options
+    #[instrument(skip(self), fields(url = %url, provider = %self.config.provider, model = %self.config.model))]
     pub async fn scrape_with_options(
         &self,
         url: &str,
@@ -131,6 +133,7 @@ impl AiScraper {
             return Err(ScrapioError::Parse(format!("Invalid URL: {}", url)));
         }
 
+        info!("Starting AI scraping");
         let html = self.http.client().get(url).send().await?.text().await?;
         let text_content = extraction::strip_html(&html);
 
@@ -142,11 +145,12 @@ impl AiScraper {
             Ok(result) => {
                 // If result is already fallback mode, preserve it
                 // Otherwise it's AI mode from extract_with_ai
+                info!("AI scraping completed successfully");
                 Ok(result)
             }
             Err(e) => {
                 // Log the error and fall back to heuristic extraction
-                tracing::warn!("AI extraction failed, falling back: {}", e);
+                warn!("AI extraction failed, falling back: {}", e);
                 let mut fallback_result = extraction::fallback_extraction(&html, url);
                 fallback_result.mode = ExtractionMode::Fallback;
                 fallback_result.provider_error = Some(e.to_string());
@@ -157,6 +161,7 @@ impl AiScraper {
     }
 
     /// Extract content using LLM
+    #[instrument(skip(self, content), fields(provider = %self.config.provider))]
     async fn extract_with_ai(
         &self,
         content: &str,
@@ -166,11 +171,13 @@ impl AiScraper {
     ) -> ScrapioResult<AiExtractionResult> {
         // Use fallback if API key is not set (except for Ollama which doesn't require one)
         if self.config.provider != "ollama" && self.config.api_key.is_none() {
+            debug!("No API key configured, using fallback extraction");
             let mut result = extraction::fallback_extraction(content, url);
             result.fallback_reason = Some(FallbackReason::NoApiKey);
             return Ok(result);
         }
 
+        debug!("Sending content to LLM provider");
         // Create provider and extract
         let llm_provider = provider::create_provider(&self.config);
         let response = llm_provider.extract(content, schema).await?;
@@ -180,6 +187,7 @@ impl AiScraper {
 
         let links = extraction::extract_links(content);
 
+        info!("AI extraction completed");
         Ok(AiExtractionResult {
             url: url.to_string(),
             data,

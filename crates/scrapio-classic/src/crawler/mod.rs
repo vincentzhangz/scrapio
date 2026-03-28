@@ -22,6 +22,7 @@ pub use types::CrawlResult;
 pub use types::*;
 
 use tokio::time::{Duration, sleep};
+use tracing::{debug, info, instrument, warn};
 
 use self::robots::DomainRateLimiter;
 
@@ -108,6 +109,7 @@ impl Crawler {
     }
 
     /// Discover URLs from sitemap.xml
+    #[instrument(skip(self))]
     pub async fn discover_from_sitemap(&self) {
         let root = self.scope.root_url();
 
@@ -124,7 +126,7 @@ impl Crawler {
             match client.get(&sitemap_url).send().await {
                 Ok(resp) if resp.status().is_success() => match resp.text().await {
                     Ok(xml) => {
-                        println!("  → Found sitemap: {}", sitemap_url);
+                        info!("Found sitemap: {}", sitemap_url);
                         let urls = parse_sitemap(&xml);
                         for url in urls {
                             if self.scope.is_in_scope(&url) {
@@ -135,7 +137,7 @@ impl Crawler {
                             }
                         }
                     }
-                    Err(e) => println!("  → Failed to read sitemap: {}", e),
+                    Err(e) => warn!("Failed to read sitemap: {}", e),
                 },
                 _ => {}
             }
@@ -143,6 +145,7 @@ impl Crawler {
     }
 
     /// Discover URLs from robots.txt
+    #[instrument(skip(self))]
     pub async fn discover_from_robots(&self) {
         let root = self.scope.root_url();
         let robots_url = format!("{}/robots.txt", root);
@@ -153,7 +156,7 @@ impl Crawler {
             Ok(resp) if resp.status().is_success() => {
                 match resp.text().await {
                     Ok(content) => {
-                        println!("  → Found robots.txt: {}", robots_url);
+                        info!("Found robots.txt: {}", robots_url);
                         // Parse robots.txt for allowed paths
                         // This is a simple implementation - extracts Allow: directives
                         for line in content.lines() {
@@ -172,7 +175,7 @@ impl Crawler {
                             }
                         }
                     }
-                    Err(e) => println!("  → Failed to read robots.txt: {}", e),
+                    Err(e) => warn!("Failed to read robots.txt: {}", e),
                 }
             }
             _ => {}
@@ -180,8 +183,13 @@ impl Crawler {
     }
 
     /// Run the crawl and collect results
+    #[instrument(skip(self))]
     pub async fn crawl(&mut self) -> Result<Vec<CrawlResult>, CrawlerError> {
         let mut pages_crawled = 0;
+        info!(
+            "Starting crawl with max_pages={} and max_depth={}",
+            self.options.max_pages, self.options.max_depth
+        );
 
         // Try to resume from previous state if enabled
         if self.options.persistence.resume {
@@ -192,20 +200,21 @@ impl Crawler {
         if self.options.politeness.respect_robots_txt {
             let root = self.scope.root_url().to_string();
             if let Err(e) = self.robots.fetch(&root).await {
-                println!("  → Warning: Failed to fetch robots.txt: {}", e);
+                warn!("Failed to fetch robots.txt: {}", e);
             }
         }
 
         while !self.frontier.is_empty().await {
             // Check max pages limit
             if pages_crawled >= self.options.max_pages {
+                info!("Reached max pages limit ({})", self.options.max_pages);
                 break;
             }
 
             // Check if we're in backoff mode
             if self.backoff_level > 0 && self.options.politeness.backoff_on_error {
                 let backoff = self.rate_limiter.calculate_backoff(self.backoff_level);
-                println!("  → Backing off for {}ms", backoff.as_millis());
+                debug!("Backing off for {}ms", backoff.as_millis());
                 sleep(backoff).await;
             }
 
@@ -238,7 +247,7 @@ impl Crawler {
                 // Apply robots.txt compliance
                 if self.options.politeness.respect_robots_txt {
                     if !self.robots.is_allowed(&entry.url).await {
-                        println!("  → Blocked by robots.txt: {}", entry.url);
+                        info!("Blocked by robots.txt: {}", entry.url);
                         continue;
                     }
 
@@ -297,10 +306,12 @@ impl Crawler {
             self.save_state(pages_crawled).await;
         }
 
+        info!("Crawl completed: {} pages crawled", pages_crawled);
         Ok(std::mem::take(&mut self.results))
     }
 
     /// Save crawl state for resumption
+    #[instrument(skip(self), fields(pages_crawled))]
     async fn save_state(&self, pages_crawled: usize) {
         if let (Some(state), Some(name)) = (&self.state, &self.options.persistence.state_name) {
             let root = self.scope.root_url().to_string();
@@ -323,8 +334,8 @@ impl Crawler {
             // Append latest results
             let _ = state.save_results(name, &self.results).await;
 
-            println!(
-                "  → Saved state: {} pages crawled, {} queued",
+            info!(
+                "Saved state: {} pages crawled, {} queued",
                 pages_crawled,
                 self.frontier.len().await
             );
@@ -332,6 +343,7 @@ impl Crawler {
     }
 
     /// Resume from previous state
+    #[instrument(skip(self))]
     async fn resume(&mut self) {
         if let (Some(state), Some(name)) = (&self.state, &self.options.persistence.state_name) {
             // Load frontier
@@ -341,14 +353,14 @@ impl Crawler {
                 }
                 let queued = self.frontier.len().await;
                 if queued > 0 {
-                    println!("  → Resumed with {} queued URLs", queued);
+                    info!("Resumed with {} queued URLs", queued);
                 }
             }
 
             // Load metadata
             if let Ok(Some(meta)) = state.load_metadata(name).await {
-                println!(
-                    "  → Previous crawl: {} pages, {} errors",
+                info!(
+                    "Previous crawl: {} pages, {} errors",
                     meta.pages_crawled, meta.error_count
                 );
             }
@@ -357,12 +369,13 @@ impl Crawler {
             if let Ok(results) = state.load_results(name).await
                 && !results.is_empty()
             {
-                println!("  → Loaded {} previous results", results.len());
+                info!("Loaded {} previous results", results.len());
             }
         }
     }
 
     /// Crawl a single page with optional AI assistance
+    #[instrument(skip(self), fields(url = %entry.url, depth = entry.depth))]
     async fn crawl_page(&mut self, entry: &FrontierEntry) -> CrawlResult {
         let mut result = CrawlResult::new(entry.url.clone())
             .with_depth(entry.depth)
@@ -404,8 +417,8 @@ impl Crawler {
                 };
 
                 if should_use_browser {
-                    println!(
-                        "  → Using browser for: {} (JS-heavy: {}, needs interaction: {})",
+                    info!(
+                        "Using browser for: {} (JS-heavy: {}, needs interaction: {})",
                         entry.url, is_js_heavy, needs_interaction
                     );
                     result = result.with_used_browser(true);
@@ -429,7 +442,7 @@ impl Crawler {
                             return result;
                         }
                         Err(e) => {
-                            println!("  ⚠ Browser fetch failed, falling back to HTTP: {}", e);
+                            warn!("Browser fetch failed, falling back to HTTP: {}", e);
                             // Continue with HTTP-based parsing
                         }
                     }
@@ -440,7 +453,7 @@ impl Crawler {
                     // For now, just mark as ready for extraction
                     // Full AI extraction would require async spawn
                     if let Some(ref schema) = self.options.ai_schema {
-                        println!("  → Ready for AI extraction with schema: {}", schema);
+                        debug!("Ready for AI extraction with schema: {}", schema);
                     }
                 }
 
@@ -544,11 +557,11 @@ impl Crawler {
         match browser.get_network_requests().await {
             Ok(requests) => {
                 if !requests.is_empty() {
-                    println!("  → Captured {} network requests", requests.len());
+                    debug!("Captured {} network requests", requests.len());
                 }
             }
             Err(e) => {
-                println!("  → Network capture error: {}", e);
+                warn!("Network capture error: {}", e);
             }
         }
 

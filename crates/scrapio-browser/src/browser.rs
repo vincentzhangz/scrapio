@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::OnceCell;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 pub use crate::stealth::{StealthConfig, StealthLevel};
 
@@ -510,10 +510,13 @@ impl StealthBrowser {
     }
 
     /// Get the underlying WebDriver client (initializes if needed)
+    #[instrument(skip(self))]
     async fn get_client(&self) -> Result<&Client, ScrapioError> {
         if let Some(client) = self.client.get() {
             return Ok(client);
         }
+
+        debug!("Initializing WebDriver client");
 
         // Build browser capabilities
         let mut builder = ClientBuilder::native();
@@ -539,6 +542,7 @@ impl StealthBrowser {
             .set(client)
             .map_err(|_| ScrapioError::Browser("Client already initialized".to_string()))?;
 
+        info!("WebDriver client initialized successfully");
         Ok(self.client.get().unwrap())
     }
 
@@ -573,8 +577,9 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if navigation fails or WebDriver is not available
+    #[instrument(skip(self), fields(url = %url))]
     pub async fn goto(&mut self, url: &str) -> Result<(), ScrapioError> {
-        info!("Navigating to: {}", url);
+        info!("Navigating to URL");
         let client = self.get_client().await?;
 
         client
@@ -599,6 +604,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if the operation fails
+    #[instrument(skip(self))]
     pub async fn title(&self) -> Result<String, ScrapioError> {
         let client = self.get_client().await?;
 
@@ -612,6 +618,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if the operation fails
+    #[instrument(skip(self))]
     pub async fn url(&self) -> Result<String, ScrapioError> {
         let client = self.get_client().await?;
 
@@ -627,6 +634,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if the element is not found or operation fails
+    #[instrument(skip(self), fields(selector))]
     pub async fn find_element(
         &self,
         selector: &str,
@@ -643,6 +651,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if operation fails
+    #[instrument(skip(self), fields(selector))]
     pub async fn find_elements(
         &self,
         selector: &str,
@@ -659,6 +668,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if script execution fails
+    #[instrument(skip(self, script), fields(script_len = script.len()))]
     pub async fn execute_script(&self, script: &str) -> Result<serde_json::Value, ScrapioError> {
         let client = self.get_client().await?;
 
@@ -688,6 +698,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if screenshot fails
+    #[instrument(skip(self))]
     pub async fn screenshot(&self) -> Result<Vec<u8>, ScrapioError> {
         let client = self.get_client().await?;
 
@@ -701,12 +712,13 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if screenshot fails or file cannot be written
+    #[instrument(skip(self), fields(path))]
     pub async fn screenshot_to_file(&self, path: &str) -> Result<(), ScrapioError> {
         let screenshot = self.screenshot().await?;
 
         std::fs::write(path, &screenshot).map_err(ScrapioError::Io)?;
 
-        info!("Screenshot saved to: {}", path);
+        info!("Screenshot saved");
         Ok(())
     }
 
@@ -714,6 +726,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if operation fails
+    #[instrument(skip(self))]
     pub async fn html(&self) -> Result<String, ScrapioError> {
         let client = self.get_client().await?;
 
@@ -766,6 +779,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if closing fails
+    #[instrument(skip(self))]
     pub async fn close(&mut self) -> Result<(), ScrapioError> {
         if self.client.get().is_some() {
             info!("Closing browser");
@@ -787,6 +801,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if script injection fails
+    #[instrument(skip(self))]
     pub async fn enable_network_capture(&self) -> Result<(), ScrapioError> {
         let script = r#"
             (function() {
@@ -852,6 +867,7 @@ impl StealthBrowser {
     ///
     /// # Errors
     /// Returns an error if script execution fails
+    #[instrument(skip(self))]
     pub async fn get_network_requests(&self) -> Result<Vec<NetworkRequest>, ScrapioError> {
         let script = r#"
             (function() {
@@ -873,6 +889,7 @@ impl StealthBrowser {
 
         let requests: Vec<CapturedRequest> = serde_json::from_str(json_str).unwrap_or_default();
 
+        debug!("Retrieved {} network requests", requests.len());
         Ok(requests
             .into_iter()
             .map(|r| NetworkRequest {

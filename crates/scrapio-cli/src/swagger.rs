@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, instrument};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -72,9 +73,11 @@ pub struct ResultItem {
 }
 
 /// Extract data from a classic scrape response as owned, Send-safe types.
+#[instrument(skip(url), fields(url))]
 pub async fn classic_scrape_data(
     url: &str,
 ) -> ScrapioResult<(String, u16, Option<String>, String, Vec<String>)> {
+    debug!("Performing classic scrape");
     let resp = Scraper::new().scrape(url).await?;
     let links = resp.links().iter().map(|s| s.to_string()).collect();
     let title = resp.title();
@@ -99,6 +102,7 @@ pub async fn health() -> (axum::http::StatusCode, axum::Json<serde_json::Value>)
     )
 }
 
+#[instrument(skip(storage))]
 #[utoipa::path(
     get,
     path = "/results",
@@ -111,6 +115,7 @@ pub async fn health() -> (axum::http::StatusCode, axum::Json<serde_json::Value>)
 pub async fn get_results(
     axum::extract::State(storage): axum::extract::State<Arc<Storage>>,
 ) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    debug!("Fetching all results");
     match storage.get_all_results(100).await {
         Ok(results) => {
             let json = serde_json::json!({
@@ -120,13 +125,17 @@ pub async fn get_results(
             });
             (axum::http::StatusCode::OK, axum::Json(json))
         }
-        Err(e) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(serde_json::json!({"error": e.to_string()})),
-        ),
+        Err(e) => {
+            error!("Failed to get results: {}", e);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"error": e.to_string()})),
+            )
+        }
     }
 }
 
+#[instrument(skip(storage), fields(id))]
 #[utoipa::path(
     get,
     path = "/results/{id}",
@@ -141,6 +150,7 @@ pub async fn get_result(
     axum::extract::State(storage): axum::extract::State<Arc<Storage>>,
     axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    debug!("Fetching result by ID: {}", id);
     match storage.get_result_by_id(id).await {
         Ok(Some(r)) => {
             let json = serde_json::json!({
@@ -149,17 +159,24 @@ pub async fn get_result(
             });
             (axum::http::StatusCode::OK, axum::Json(json))
         }
-        Ok(None) => (
-            axum::http::StatusCode::NOT_FOUND,
-            axum::Json(serde_json::json!({"error": "Not found"})),
-        ),
-        Err(e) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            axum::Json(serde_json::json!({"error": e.to_string()})),
-        ),
+        Ok(None) => {
+            debug!("Result not found: {}", id);
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                axum::Json(serde_json::json!({"error": "Not found"})),
+            )
+        }
+        Err(e) => {
+            error!("Failed to get result: {}", e);
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({"error": e.to_string()})),
+            )
+        }
     }
 }
 
+#[instrument(skip(storage, body), fields(url = %body.url, ai = body.ai, browser = body.browser))]
 #[utoipa::path(
     post,
     path = "/scrape",
@@ -175,6 +192,10 @@ pub async fn scrape(
     axum::extract::State(storage): axum::extract::State<Arc<Storage>>,
     axum::extract::Json(body): axum::extract::Json<ScrapeRequest>,
 ) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    info!(
+        "Scrape request: url={}, ai={}, browser={}",
+        body.url, body.ai, body.browser
+    );
     let payload = body;
 
     // Browser-based AI scraping
@@ -196,6 +217,7 @@ pub async fn scrape(
             .await
         {
             Ok(result) => {
+                info!("Browser AI scrape completed successfully");
                 let _ = storage
                     .save_result(
                         &result.url,
@@ -214,10 +236,13 @@ pub async fn scrape(
                 });
                 (axum::http::StatusCode::OK, axum::Json(json))
             }
-            Err(e) => (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(serde_json::json!({"error": e.to_string()})),
-            ),
+            Err(e) => {
+                error!("Browser AI scrape failed: {}", e);
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({"error": e.to_string()})),
+                )
+            }
         }
     }
     // HTTP-based AI scraping
@@ -230,6 +255,7 @@ pub async fn scrape(
         };
         match scraper.scrape(&payload.url, schema).await {
             Ok(result) => {
+                info!("HTTP AI scrape completed successfully");
                 let _ = storage
                     .save_result(
                         &result.url,
@@ -251,22 +277,27 @@ pub async fn scrape(
                 });
                 (axum::http::StatusCode::OK, axum::Json(json))
             }
-            Err(e) => (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(serde_json::json!({"error": e.to_string()})),
-            ),
+            Err(e) => {
+                error!("HTTP AI scrape failed: {}", e);
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(serde_json::json!({"error": e.to_string()})),
+                )
+            }
         }
     } else {
         let scrape_result = classic_scrape_data(&payload.url).await;
         let (url, status, title, html, links) = match scrape_result {
             Ok(data) => data,
             Err(e) => {
+                error!("Classic scrape failed: {}", e);
                 return (
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                     axum::Json(serde_json::json!({"error": e.to_string()})),
                 );
             }
         };
+        info!("Classic scrape completed successfully");
         let _ = storage
             .save_result(&url, status, title.as_deref(), &html, &links)
             .await;
