@@ -21,6 +21,7 @@ pub use state::{CrawlMetadata, CrawlState};
 pub use types::CrawlResult;
 pub use types::*;
 
+use scrapio_core::proxy::ProxyRotationConfig;
 use tokio::time::{Duration, sleep};
 use tracing::{debug, info, instrument, warn};
 
@@ -38,6 +39,10 @@ pub struct Crawler {
     state: Option<CrawlState>,
     error_count: usize,
     backoff_level: u32,
+    /// Scraper with proxy support
+    scraper: crate::Scraper,
+    /// Proxy rotation state (mutex for interior mutability)
+    proxy_rotation: Option<std::sync::Mutex<ProxyRotationConfig>>,
 }
 
 impl Crawler {
@@ -72,6 +77,17 @@ impl Crawler {
             None
         };
 
+        // Initialize scraper with proxy configuration
+        let scraper = if let Some(ref proxy) = options.proxy {
+            crate::Scraper::with_proxy(proxy.clone())
+                .map_err(|e| CrawlerError::HttpError(e))?
+        } else {
+            crate::Scraper::new()
+        };
+
+        // Initialize proxy rotation if configured
+        let proxy_rotation = options.proxy_rotation.clone().map(std::sync::Mutex::new);
+
         Ok(Self {
             options,
             frontier,
@@ -83,6 +99,8 @@ impl Crawler {
             state,
             error_count: 0,
             backoff_level: 0,
+            scraper,
+            proxy_rotation,
         })
     }
 
@@ -388,8 +406,27 @@ impl Crawler {
         // Check if we should use AI-assisted detection
         let _use_ai_detection = self.options.extract_data && self.options.ai_provider.is_some();
 
-        // First, try HTTP fetch
-        let scraper = crate::Scraper::new();
+        // Get proxy for this request if rotation is enabled
+        let scraper = if let Some(ref proxy_rotation) = self.proxy_rotation {
+            // Get domain for per-domain rotation
+            let domain = url::Url::parse(&entry.url)
+                .ok()
+                .and_then(|u| u.host_str().map(|s| s.to_string()));
+
+            // Lock and get proxy
+            let mut rotation = proxy_rotation.lock().unwrap();
+            if let Some(proxy) = rotation.get_proxy(domain.as_deref()) {
+                // Create scraper with this proxy
+                match crate::Scraper::with_proxy(proxy.clone()) {
+                    Ok(s) => s,
+                    Err(_) => self.scraper.clone(),
+                }
+            } else {
+                self.scraper.clone()
+            }
+        } else {
+            self.scraper.clone()
+        };
 
         match scraper.scrape(&entry.url).await {
             Ok(resp) => {
@@ -472,7 +509,7 @@ impl Crawler {
             }
             Err(e) => {
                 result = result.with_error(e.to_string());
-                None
+                None::<crate::Response>
             }
         };
 
@@ -532,11 +569,18 @@ impl Crawler {
             .await
             .map_err(|e| format!("Failed to start ChromeDriver: {}", e))?;
 
-        // Create browser with stealth configuration
-        let mut browser = StealthBrowser::with_webdriver(driver.webdriver_url())
+        // Create browser with stealth configuration and proxy
+        let mut browser_builder = StealthBrowser::with_webdriver(driver.webdriver_url())
             .headless(true)
             .stealth(StealthConfig::new(StealthLevel::Full))
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(30));
+
+        // Add proxy if configured
+        if let Some(ref proxy) = self.options.proxy {
+            browser_builder = browser_builder.proxy(proxy.clone());
+        }
+
+        let mut browser = browser_builder
             .init()
             .await
             .map_err(|e| format!("Failed to initialize browser: {}", e))?;

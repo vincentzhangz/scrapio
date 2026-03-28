@@ -86,6 +86,15 @@ enum Commands {
         no_store: bool,
         #[arg(long)]
         network: bool,
+        /// Single proxy URL (e.g., http://user:pass@proxy:8080)
+        #[arg(long)]
+        proxy: Option<String>,
+        /// Path to file with proxy list (one per line)
+        #[arg(long)]
+        proxy_list: Option<String>,
+        /// Proxy rotation strategy (round-robin, random, per-domain)
+        #[arg(long, default_value = "round-robin")]
+        proxy_rotation: String,
     },
     Save {
         url: String,
@@ -118,6 +127,9 @@ enum Commands {
         driver_path: Option<String>,
         #[arg(long, default_value = "chrome")]
         browser: String,
+        /// Proxy URL (e.g., http://user:pass@proxy:8080)
+        #[arg(long)]
+        proxy: Option<String>,
     },
     /// Start the MCP server for AI client integration
     Mcp {
@@ -186,6 +198,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             store,
             no_store,
             network,
+            proxy,
+            proxy_list,
+            proxy_rotation,
         } => commands::handle_crawl(
             &url,
             depth,
@@ -203,6 +218,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &store,
             no_store,
             network,
+            proxy.as_deref(),
+            proxy_list.as_deref(),
+            &proxy_rotation,
         ),
         Commands::Save { url, database } => commands::handle_save(&url, &database),
         Commands::List {
@@ -223,6 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             script,
             driver_path,
             browser,
+            proxy,
         } => {
             commands::handle_browser(
                 &url,
@@ -231,6 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 script.as_deref(),
                 driver_path.as_deref(),
                 &browser,
+                proxy.as_deref(),
             );
         }
         Commands::Mcp { http, host, port } => {

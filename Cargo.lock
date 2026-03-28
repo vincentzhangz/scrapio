@@ -2966,6 +2966,8 @@ dependencies = [
 name = "scrapio-core"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "rand 0.9.2",
  "regex",
  "reqwest",
  "serde",

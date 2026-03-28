@@ -5,6 +5,8 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
+use scrapio_core::proxy::{ProxyConfig, ProxyRotationConfig};
+
 /// Configuration for crawler operation
 #[derive(Debug, Clone)]
 pub struct CrawlOptions {
@@ -42,6 +44,10 @@ pub struct CrawlOptions {
     pub politeness: PolitenessOptions,
     /// Persistence configuration
     pub persistence: PersistenceOptions,
+    /// Proxy configuration
+    pub proxy: Option<ProxyConfig>,
+    /// Proxy rotation configuration
+    pub proxy_rotation: Option<ProxyRotationConfig>,
 }
 
 impl Default for CrawlOptions {
@@ -64,6 +70,8 @@ impl Default for CrawlOptions {
             result_sender: None,
             politeness: PolitenessOptions::default(),
             persistence: PersistenceOptions::default(),
+            proxy: None,
+            proxy_rotation: None,
         }
     }
 }
@@ -164,6 +172,44 @@ impl CrawlOptions {
     pub fn persist_as(mut self, name: &str) -> Self {
         self.persistence = PersistenceOptions::default().with_name(name);
         self
+    }
+
+    /// Set a single proxy for all requests
+    pub fn with_proxy(mut self, proxy: ProxyConfig) -> Self {
+        self.proxy = Some(proxy);
+        self
+    }
+
+    /// Set proxy rotation with a list of proxies and strategy
+    pub fn with_proxy_rotation(
+        mut self,
+        proxies: Vec<ProxyConfig>,
+        strategy: scrapio_core::proxy::RotationStrategy,
+    ) -> Self {
+        self.proxy_rotation = Some(ProxyRotationConfig::new(proxies, strategy));
+        self
+    }
+
+    /// Load proxies from a file (one proxy per line)
+    pub fn with_proxy_list_file(
+        &mut self,
+        path: &str,
+        strategy: scrapio_core::proxy::RotationStrategy,
+    ) -> Result<(), std::io::Error> {
+        let content = std::fs::read_to_string(path)?;
+        let proxies: Vec<ProxyConfig> = content
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    None
+                } else {
+                    ProxyConfig::parse(line).ok()
+                }
+            })
+            .collect();
+        self.proxy_rotation = Some(ProxyRotationConfig::new(proxies, strategy));
+        Ok(())
     }
 }
 

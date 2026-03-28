@@ -6,6 +6,8 @@ description = "Core types and utilities for Scrapio"
 license = "MIT"
 
 [dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.9"
 regex = "1"
 reqwest = { version = "0.13", features = ["json", "cookies", "rustls"] }
 serde = { version = "1", features = ["derive"] }

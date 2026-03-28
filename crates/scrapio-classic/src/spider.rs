@@ -4,6 +4,7 @@
 //! websites and extract structured data.
 
 use crate::{Response, Scraper};
+use scrapio_core::proxy::{ProxyConfig, ProxyRotationConfig};
 
 /// A Spider is the main component for defining crawl behavior.
 /// It defines what URLs to crawl and how to parse the responses.
@@ -85,6 +86,10 @@ pub struct SpiderRunner {
     max_depth: usize,
     concurrent_requests: usize,
     download_delay: std::time::Duration,
+    /// Optional proxy for all requests
+    proxy: Option<ProxyConfig>,
+    /// Optional proxy rotation
+    proxy_rotation: Option<std::sync::Mutex<ProxyRotationConfig>>,
 }
 
 impl SpiderRunner {
@@ -94,7 +99,27 @@ impl SpiderRunner {
             max_depth: 3,
             concurrent_requests: 5,
             download_delay: std::time::Duration::from_millis(500),
+            proxy: None,
+            proxy_rotation: None,
         }
+    }
+
+    pub fn with_proxy(mut self, proxy: ProxyConfig) -> Self {
+        self.scraper = Scraper::with_proxy(proxy.clone()).unwrap_or_else(|_| Scraper::new());
+        self.proxy = Some(proxy);
+        self
+    }
+
+    pub fn with_proxy_rotation(
+        mut self,
+        proxies: Vec<ProxyConfig>,
+        strategy: scrapio_core::proxy::RotationStrategy,
+    ) -> Self {
+        self.proxy_rotation = Some(std::sync::Mutex::new(ProxyRotationConfig::new(
+            proxies,
+            strategy,
+        )));
+        self
     }
 
     pub fn with_max_depth(mut self, depth: usize) -> Self {
@@ -137,8 +162,31 @@ impl SpiderRunner {
                 // Download delay
                 tokio::time::sleep(self.download_delay).await;
 
+                // Get scraper with proxy if rotation is enabled
+                let scraper = if let Some(ref proxy_rotation) = self.proxy_rotation {
+                    let domain = url::Url::parse(&url)
+                        .ok()
+                        .and_then(|u| u.host_str().map(|s| s.to_string()));
+                    let mut rotation = proxy_rotation.lock().unwrap();
+                    if let Some(proxy) = rotation.get_proxy(domain.as_deref()) {
+                        match Scraper::with_proxy(proxy.clone()) {
+                            Ok(s) => s,
+                            Err(_) => self.scraper.clone(),
+                        }
+                    } else {
+                        self.scraper.clone()
+                    }
+                } else if let Some(ref proxy) = self.proxy {
+                    match Scraper::with_proxy(proxy.clone()) {
+                        Ok(s) => s,
+                        Err(_) => self.scraper.clone(),
+                    }
+                } else {
+                    self.scraper.clone()
+                };
+
                 // Fetch the page
-                match self.scraper.scrape(&url).await {
+                match scraper.scrape(&url).await {
                     Ok(response) => {
                         let output = spider.parse(&response);
 

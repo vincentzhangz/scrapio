@@ -1,7 +1,7 @@
 //! Classic scraping for Scrapio
 
 use scraper::{Html, Selector};
-use scrapio_core::{ScrapioResult, error::*, http::HttpClient};
+use scrapio_core::{ScrapioResult, error::*, http::HttpClient, proxy::ProxyConfig};
 use tracing::{debug, info, instrument};
 
 pub mod crawler;
@@ -12,11 +12,32 @@ pub struct Scraper {
     http: HttpClient,
 }
 
+impl Clone for Scraper {
+    fn clone(&self) -> Self {
+        Self {
+            http: self.http.clone(),
+        }
+    }
+}
+
 impl Scraper {
     pub fn new() -> Self {
         Self {
             http: HttpClient::new(),
         }
+    }
+
+    /// Create a new scraper with a custom HTTP client configuration
+    pub fn with_proxy(proxy: ProxyConfig) -> Result<Self, ScrapioError> {
+        let http = HttpClient::builder()
+            .proxy(proxy)
+            .build()?;
+        Ok(Self { http })
+    }
+
+    /// Create a scraper with a custom HTTP client
+    pub fn with_http_client(http: HttpClient) -> Self {
+        Self { http }
     }
 
     #[instrument(skip(self), fields(url = %url))]

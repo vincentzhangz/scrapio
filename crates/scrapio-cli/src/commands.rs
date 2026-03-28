@@ -1,4 +1,5 @@
 use scrapio_classic::Scraper;
+use scrapio_core::proxy::{ProxyConfig, RotationStrategy as ProxyRotationStrategy};
 use scrapio_runtime::Runtime;
 use tracing::{debug, error, info, instrument};
 
@@ -100,30 +101,6 @@ async fn start_driver(
         Ok(driver) => Some(driver),
         Err(e) => {
             eprintln!("Failed to start WebDriver: {}", e);
-            None
-        }
-    }
-}
-
-async fn init_browser(
-    driver_url: &str,
-    headless: bool,
-    stealth_level: scrapio_browser::StealthLevel,
-    browser_type: scrapio_browser::BrowserType,
-) -> Option<scrapio_browser::StealthBrowser> {
-    let mut builder =
-        scrapio_browser::StealthBrowser::with_webdriver_and_type(driver_url, browser_type)
-            .headless(headless);
-
-    if stealth_level != scrapio_browser::StealthLevel::None {
-        let config = scrapio_browser::StealthConfig::new(stealth_level);
-        builder = builder.stealth(config);
-    }
-
-    match builder.init().await {
-        Ok(browser) => Some(browser),
-        Err(e) => {
-            eprintln!("Failed to initialize browser: {}", e);
             None
         }
     }
@@ -399,6 +376,9 @@ pub fn handle_crawl(
     store_path: &str,
     no_store: bool,
     capture_network: bool,
+    proxy: Option<&str>,
+    proxy_list: Option<&str>,
+    proxy_rotation: &str,
 ) {
     use ctrlc::set_handler;
     use scrapio_classic::crawler::{BrowserEscalation, CrawlOptions, Crawler, Scope, ScopeMode};
@@ -446,6 +426,9 @@ pub fn handle_crawl(
             _ => BrowserEscalation::Auto,
         };
 
+        // Parse rotation strategy
+        let rotation_strategy = ProxyRotationStrategy::from_str(proxy_rotation);
+
         // Build options
         let mut options = CrawlOptions::new()
             .with_max_depth(depth)
@@ -454,6 +437,26 @@ pub fn handle_crawl(
             .with_rate_limit(10)
             .with_browser_escalation(escalation)
             .with_capture_network(capture_network);
+
+        // Apply proxy configuration
+        if let Some(proxy_str) = proxy {
+            if let Ok(proxy) = ProxyConfig::parse(proxy_str) {
+                eprintln!("Using proxy: {}", proxy);
+                options = options.with_proxy(proxy);
+            } else {
+                eprintln!("Warning: Invalid proxy URL: {}", proxy_str);
+            }
+        } else if let Some(proxy_list_path) = proxy_list {
+            // Try to load proxy list file
+            match options.with_proxy_list_file(proxy_list_path, rotation_strategy) {
+                Ok(()) => {
+                    eprintln!("Loaded proxies from: {}", proxy_list_path);
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to load proxy list: {}", e);
+                }
+            }
+        }
 
         // Apply unsafe or robots.txt settings
         if unsafe_mode {
@@ -729,6 +732,7 @@ pub fn handle_browser(
     script: Option<&str>,
     driver_path: Option<&str>,
     browser: &str,
+    proxy: Option<&str>,
 ) {
     info!(
         "Starting browser session: browser={}, headless={}",
@@ -745,16 +749,33 @@ pub fn handle_browser(
             None => return,
         };
 
-        let mut browser = match init_browser(
+        let mut browser_builder = scrapio_browser::StealthBrowser::with_webdriver_and_type(
             &driver.webdriver_url(),
-            headless,
-            stealth_level,
             browser_type,
         )
-        .await
-        {
-            Some(b) => b,
-            None => return,
+        .headless(headless);
+
+        if stealth_level != scrapio_browser::StealthLevel::None {
+            let config = scrapio_browser::StealthConfig::new(stealth_level);
+            browser_builder = browser_builder.stealth(config);
+        }
+
+        // Add proxy if configured
+        if let Some(proxy_str) = proxy {
+            if let Ok(proxy) = ProxyConfig::parse(proxy_str) {
+                eprintln!("Using proxy: {}", proxy);
+                browser_builder = browser_builder.proxy(proxy);
+            } else {
+                eprintln!("Warning: Invalid proxy URL: {}", proxy_str);
+            }
+        }
+
+        let mut browser = match browser_builder.init().await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("Failed to initialize browser: {}", e);
+                return;
+            }
         };
 
         match browser.goto(url).await {

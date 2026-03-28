@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ScrapioError {
     #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
+    Http(String),
 
     #[error("Parse error: {0}")]
     Parse(String),
@@ -31,6 +31,12 @@ pub enum ScrapioError {
 
     #[error("Browser error: {0}")]
     Browser(String),
+}
+
+impl From<reqwest::Error> for ScrapioError {
+    fn from(err: reqwest::Error) -> Self {
+        ScrapioError::Http(err.to_string())
+    }
 }
 
 /// Result type alias using ScrapioError as the error type

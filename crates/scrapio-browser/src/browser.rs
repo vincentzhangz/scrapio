@@ -6,6 +6,7 @@
 
 use fantoccini::{Client, ClientBuilder};
 use scrapio_core::error::ScrapioError;
+use scrapio_core::proxy::ProxyConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -127,6 +128,14 @@ impl BrowserCapabilities for ChromeCapabilities {
             args.push(Value::String("--disable-gpu".to_string()));
         }
 
+        // Add proxy if configured
+        if let Some(ref proxy) = config.proxy {
+            let proxy_url = proxy.with_auth();
+            args.push(Value::String(format!("--proxy-server={}", proxy_url)));
+            // Bypass proxy for localhost if needed
+            args.push(Value::String("--proxy-bypass-list=<local>".to_string()));
+        }
+
         // Add window size if specified
         if let Some((width, height)) = config.window_size {
             args.push(Value::String(format!("--window-size={},{}", width, height)));
@@ -191,6 +200,13 @@ impl BrowserCapabilities for FirefoxCapabilities {
             args.push(Value::String("--headless".to_string()));
         }
 
+        // Add proxy if configured
+        if let Some(ref proxy) = config.proxy {
+            if let Some((host, port)) = proxy.host_port() {
+                args.push(Value::String(format!("--proxy={}:{}", host, port)));
+            }
+        }
+
         // Add window size if specified
         if let Some((width, height)) = config.window_size {
             args.push(Value::String(format!("--width={}", width)));
@@ -224,7 +240,7 @@ impl BrowserCapabilities for FirefoxCapabilities {
             );
         }
 
-        // Build prefs for stealth settings
+        // Build prefs for stealth settings and proxy
         let mut prefs = serde_json::Map::new();
 
         // Set custom user agent via prefs if stealth is configured
@@ -240,6 +256,21 @@ impl BrowserCapabilities for FirefoxCapabilities {
             Value::Bool(true),
         );
         prefs.insert("webgl.disabled".to_string(), Value::Bool(true));
+
+        // Proxy preferences
+        if let Some(ref proxy) = config.proxy {
+            prefs.insert("network.proxy.type".to_string(), Value::Number(serde_json::Number::from(1))); // Manual proxy
+            if let Some((host, port)) = proxy.host_port() {
+                prefs.insert("network.proxy.http".to_string(), Value::String(host.clone()));
+                prefs.insert("network.proxy.http_port".to_string(), Value::Number(serde_json::Number::from(port)));
+                prefs.insert("network.proxy.ssl".to_string(), Value::String(host));
+                prefs.insert("network.proxy.ssl_port".to_string(), Value::Number(serde_json::Number::from(port)));
+                // Share HTTP proxy for SSL
+                prefs.insert("network.proxy.share_proxies".to_string(), Value::Bool(true));
+            }
+            // Note: Firefox requires about:config changes for auth
+            // Users may need to set network.proxy.socks_remote_dns for DNS over proxy
+        }
 
         if !prefs.is_empty() {
             options.insert("prefs".to_string(), Value::Object(prefs));
@@ -280,6 +311,13 @@ impl BrowserCapabilities for EdgeCapabilities {
         if config.headless {
             args.push(Value::String("--headless=new".to_string()));
             args.push(Value::String("--disable-gpu".to_string()));
+        }
+
+        // Add proxy if configured (Edge is Chromium-based, same as Chrome)
+        if let Some(ref proxy) = config.proxy {
+            let proxy_url = proxy.with_auth();
+            args.push(Value::String(format!("--proxy-server={}", proxy_url)));
+            args.push(Value::String("--proxy-bypass-list=<local>".to_string()));
         }
 
         // Add window size if specified
@@ -351,6 +389,8 @@ pub struct BrowserConfig {
     pub timeout: Duration,
     /// Window size (width, height)
     pub window_size: Option<(u32, u32)>,
+    /// Proxy configuration
+    pub proxy: Option<ProxyConfig>,
 }
 
 impl Default for BrowserConfig {
@@ -363,6 +403,7 @@ impl Default for BrowserConfig {
             args: Vec::new(),
             timeout: Duration::from_secs(30),
             window_size: Some((1920, 1080)),
+            proxy: None,
         }
     }
 }
@@ -494,6 +535,12 @@ impl StealthBrowser {
     /// Add additional browser arguments
     pub fn arg(mut self, arg: impl Into<String>) -> Self {
         self.config.args.push(arg.into());
+        self
+    }
+
+    /// Set proxy configuration
+    pub fn proxy(mut self, proxy: ProxyConfig) -> Self {
+        self.config.proxy = Some(proxy);
         self
     }
 

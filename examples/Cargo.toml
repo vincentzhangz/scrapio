@@ -28,6 +28,18 @@ path = "browser_complex.rs"
 name = "ralph"
 path = "ralph.rs"
 
+[[bin]]
+name = "proxy_basic"
+path = "proxy_basic.rs"
+
+[[bin]]
+name = "proxy_rotation"
+path = "proxy_rotation.rs"
+
+[[bin]]
+name = "proxy_with_crawl"
+path = "proxy_with_crawl.rs"
+
 [dependencies]
 scrapio-ai = { path = "../crates/scrapio-ai", features = ["browser"] }
 scrapio-browser = { path = "../crates/scrapio-browser" }
