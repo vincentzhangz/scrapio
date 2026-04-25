@@ -3007,7 +3007,7 @@ dependencies = [
 
 [[package]]
 name = "scrapio-ai"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "regex",
  "reqwest",
@@ -3023,7 +3023,7 @@ dependencies = [
 
 [[package]]
 name = "scrapio-browser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "fantoccini",
@@ -3060,7 +3060,7 @@ dependencies = [
 
 [[package]]
 name = "scrapio-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "clap",
