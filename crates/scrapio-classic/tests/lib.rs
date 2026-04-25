@@ -1,7 +1,7 @@
 //! Tests for scrapio-classic lib module
 
 use scraper::Html;
-use scrapio_classic::{Response, Scraper};
+use scrapio_classic::Response;
 
 fn create_test_response(html: &str, url: &str) -> Response {
     let document = Html::parse_document(html);
