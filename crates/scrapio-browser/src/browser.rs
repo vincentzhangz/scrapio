@@ -201,10 +201,10 @@ impl BrowserCapabilities for FirefoxCapabilities {
         }
 
         // Add proxy if configured
-        if let Some(ref proxy) = config.proxy {
-            if let Some((host, port)) = proxy.host_port() {
-                args.push(Value::String(format!("--proxy={}:{}", host, port)));
-            }
+        if let Some(ref proxy) = config.proxy
+            && let Some((host, port)) = proxy.host_port()
+        {
+            args.push(Value::String(format!("--proxy={}:{}", host, port)));
         }
 
         // Add window size if specified
@@ -259,12 +259,24 @@ impl BrowserCapabilities for FirefoxCapabilities {
 
         // Proxy preferences
         if let Some(ref proxy) = config.proxy {
-            prefs.insert("network.proxy.type".to_string(), Value::Number(serde_json::Number::from(1))); // Manual proxy
+            prefs.insert(
+                "network.proxy.type".to_string(),
+                Value::Number(serde_json::Number::from(1)),
+            ); // Manual proxy
             if let Some((host, port)) = proxy.host_port() {
-                prefs.insert("network.proxy.http".to_string(), Value::String(host.clone()));
-                prefs.insert("network.proxy.http_port".to_string(), Value::Number(serde_json::Number::from(port)));
+                prefs.insert(
+                    "network.proxy.http".to_string(),
+                    Value::String(host.clone()),
+                );
+                prefs.insert(
+                    "network.proxy.http_port".to_string(),
+                    Value::Number(serde_json::Number::from(port)),
+                );
                 prefs.insert("network.proxy.ssl".to_string(), Value::String(host));
-                prefs.insert("network.proxy.ssl_port".to_string(), Value::Number(serde_json::Number::from(port)));
+                prefs.insert(
+                    "network.proxy.ssl_port".to_string(),
+                    Value::Number(serde_json::Number::from(port)),
+                );
                 // Share HTTP proxy for SSL
                 prefs.insert("network.proxy.share_proxies".to_string(), Value::Bool(true));
             }

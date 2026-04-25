@@ -370,16 +370,37 @@ impl ChromeDriverManager {
 
         self.version = Some(version.clone());
 
-        // Check if already downloaded
-        if self.driver_path().exists() {
-            println!("ChromeDriver already exists at {:?}", self.driver_path());
-            return Ok(self.driver_path());
-        }
+        // Check if already downloaded and version matches
+        let driver_path = self.driver_path();
+        let driver_exists = driver_path.exists();
 
-        println!("Downloading ChromeDriver {} from {}", version, download_url);
+        if driver_exists {
+            if let Some(ref requested_version) = self.version {
+                // Verify cached driver matches requested version
+                if let Ok(cached_version) = self.get_driver_version().await {
+                    if cached_version == *requested_version {
+                        println!("ChromeDriver already exists at {:?} (version {})", self.driver_path(), cached_version);
+                        return Ok(self.driver_path());
+                    }
+                    // Version mismatch - delete and re-download
+                    println!("ChromeDriver version mismatch (cached: {}, requested: {}), re-downloading...", cached_version, requested_version);
+                } else {
+                    // Can't determine cached version - proceed to re-download
+                    println!("Could not determine cached version, re-downloading...");
+                }
+                // Delete mismatched driver
+                std::fs::remove_file(self.driver_path())
+                    .map_err(|e| ChromeDriverError::Io(e.to_string()))?;
+            } else {
+                // No specific version requested - use cached
+                println!("ChromeDriver already exists at {:?}", self.driver_path());
+                return Ok(self.driver_path());
+            }
+        }
 
         // Download with retry using async reqwest
         let bytes = download_with_retry(&download_url).await?;
+        println!("Downloaded {} bytes", bytes.len());
 
         // Extract the zip
         let cursor = std::io::Cursor::new(bytes);
@@ -470,14 +491,56 @@ impl ChromeDriverManager {
 
     /// Download if not exists and return the path
     pub async fn ensure(&mut self) -> Result<PathBuf, ChromeDriverError> {
-        if self.driver_path().exists() {
-            // Apply patches even if already downloaded (in case it was updated externally)
-            if self.patch_stealth {
-                let _ = self.apply_patches();
+        let driver_exists = self.driver_path().exists();
+
+        // If driver exists and we have a specific version requested, check if it matches
+        if driver_exists {
+            if let Some(ref requested_version) = self.version {
+                // Fetch current cached version to compare
+                if let Ok(cached_version) = self.get_driver_version().await {
+                    if &cached_version == requested_version {
+                        // Version matches - apply patches and use cached
+                        if self.patch_stealth {
+                            let _ = self.apply_patches();
+                        }
+                        return Ok(self.driver_path());
+                    }
+                    // Version mismatch - need to re-download and clean old one
+                    println!("ChromeDriver version mismatch (cached: {}, requested: {}), re-downloading...", cached_version, requested_version);
+                } else {
+                    // Can't determine version - re-download to be safe
+                }
+            } else {
+                // No specific version requested - use cached
+                if self.patch_stealth {
+                    let _ = self.apply_patches();
+                }
+                return Ok(self.driver_path());
             }
-            Ok(self.driver_path())
+        }
+        // Delete existing driver if version mismatch or doesn't exist
+        if driver_exists {
+            println!("Deleting existing ChromeDriver for version change...");
+            std::fs::remove_file(self.driver_path())
+                .map_err(|e| ChromeDriverError::Io(e.to_string()))?;
+        }
+        self.download().await
+    }
+
+    /// Get the version of an existing ChromeDriver binary
+    async fn get_driver_version(&self) -> Result<String, ChromeDriverError> {
+        use std::process::Command;
+        let output = Command::new(self.driver_path())
+            .arg("--version")
+            .output()
+            .map_err(|e| ChromeDriverError::Io(e.to_string()))?;
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        // Parse "ChromeDriver 148.0.7778.56 ..." format
+        if let Some(version) = output_str.split_whitespace().nth(1) {
+            Ok(version.to_string())
         } else {
-            self.download().await
+            Err(ChromeDriverError::NotFound("Could not parse driver version".to_string()))
         }
     }
 

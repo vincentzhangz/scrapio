@@ -268,11 +268,11 @@ impl ServerHandler for ScrapioMcpServer {
         request: CallToolRequestParams,
         _context: RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
-        /// Convert JsonObject to serde_json::Value for deserialization
+        // Convert JsonObject to serde_json::Value for deserialization
         let args = request.arguments.unwrap_or_default();
         let args_value = serde_json::Value::Object(args);
 
-        /// Get tool name as &str for matching
+        // Get tool name as &str for matching
         let tool_name: &str = &request.name;
 
         match self.call_tool_by_name(tool_name, args_value).await {

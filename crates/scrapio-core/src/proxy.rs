@@ -56,10 +56,11 @@ impl ProxyConfig {
         };
 
         // Parse URL
-        let parsed = url::Url::parse(&url_with_scheme).map_err(|e| ProxyParseError::InvalidUrl {
-            url: s.to_string(),
-            source: e,
-        })?;
+        let parsed =
+            url::Url::parse(&url_with_scheme).map_err(|e| ProxyParseError::InvalidUrl {
+                url: s.to_string(),
+                source: e,
+            })?;
 
         let username = parsed.username();
         let password = parsed.password().map(|s| s.to_string());
@@ -95,12 +96,11 @@ impl ProxyConfig {
 
     /// Get proxy host and port
     pub fn host_port(&self) -> Option<(String, u16)> {
-        if let Ok(parsed) = url::Url::parse(&self.url) {
-            if let Some(host) = parsed.host_str() {
-                if let Some(port) = parsed.port() {
-                    return Some((host.to_string(), port));
-                }
-            }
+        if let Ok(parsed) = url::Url::parse(&self.url)
+            && let Some(host) = parsed.host_str()
+            && let Some(port) = parsed.port()
+        {
+            return Some((host.to_string(), port));
         }
         None
     }
@@ -118,7 +118,13 @@ impl fmt::Display for ProxyConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let (Some(username), Some(password)) = (&self.username, &self.password) {
             // Show masked password
-            write!(f, "{}:{}***@{}", username, &password[..password.len().min(2)], self.url)
+            write!(
+                f,
+                "{}:{}***@{}",
+                username,
+                &password[..password.len().min(2)],
+                self.url
+            )
         } else {
             write!(f, "{}", self.url)
         }
@@ -153,7 +159,7 @@ pub enum RotationStrategy {
 }
 
 impl RotationStrategy {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "roundrobin" | "round-robin" => RotationStrategy::RoundRobin,
             "random" => RotationStrategy::Random,
@@ -222,7 +228,10 @@ impl ProxyRotationConfig {
                 // Compute index before borrowing to avoid borrow checker issues
                 let proxies_len = self.proxies.len();
                 let map_len = self.domain_map.len();
-                let idx = *self.domain_map.entry(domain.to_string()).or_insert(map_len % proxies_len);
+                let idx = *self
+                    .domain_map
+                    .entry(domain.to_string())
+                    .or_insert(map_len % proxies_len);
                 Some(&self.proxies[idx])
             }
             RotationStrategy::PerRequest => {
@@ -311,10 +320,22 @@ mod tests {
         let mut config = ProxyRotationConfig::new(proxies, RotationStrategy::RoundRobin);
 
         // Should cycle through proxies
-        assert_eq!(config.get_proxy(None).unwrap().url, "http://proxy1.com:8080");
-        assert_eq!(config.get_proxy(None).unwrap().url, "http://proxy2.com:8080");
-        assert_eq!(config.get_proxy(None).unwrap().url, "http://proxy3.com:8080");
-        assert_eq!(config.get_proxy(None).unwrap().url, "http://proxy1.com:8080");
+        assert_eq!(
+            config.get_proxy(None).unwrap().url,
+            "http://proxy1.com:8080"
+        );
+        assert_eq!(
+            config.get_proxy(None).unwrap().url,
+            "http://proxy2.com:8080"
+        );
+        assert_eq!(
+            config.get_proxy(None).unwrap().url,
+            "http://proxy3.com:8080"
+        );
+        assert_eq!(
+            config.get_proxy(None).unwrap().url,
+            "http://proxy1.com:8080"
+        );
     }
 
     #[test]
@@ -415,7 +436,10 @@ impl ProxyManager {
     /// Validate a proxy by attempting to connect through it
     ///
     /// Returns a ProxyHealth struct with the proxy's status
-    pub async fn validate_proxy(&self, proxy: &ProxyConfig) -> Result<ProxyHealth, ProxyParseError> {
+    pub async fn validate_proxy(
+        &self,
+        proxy: &ProxyConfig,
+    ) -> Result<ProxyHealth, ProxyParseError> {
         let start = std::time::Instant::now();
 
         // Create HTTP client with the proxy
@@ -462,7 +486,10 @@ impl ProxyManager {
     ///
     /// This works by checking if certain headers are present in responses
     /// that would indicate the proxy is identifying itself
-    pub async fn check_anonymity_level(&self, proxy: &ProxyConfig) -> Result<AnonymityLevel, ProxyParseError> {
+    pub async fn check_anonymity_level(
+        &self,
+        proxy: &ProxyConfig,
+    ) -> Result<AnonymityLevel, ProxyParseError> {
         // Create HTTP client with the proxy
         let client = match crate::http::HttpClient::builder()
             .proxy(proxy.clone())
@@ -475,7 +502,12 @@ impl ProxyManager {
 
         // Try to fetch a URL that echoes request info
         // Using httpbin.org which returns request headers
-        match client.client().get("https://httpbin.org/headers").send().await {
+        match client
+            .client()
+            .get("https://httpbin.org/headers")
+            .send()
+            .await
+        {
             Ok(response) => {
                 // Check response for proxy-identifying headers
                 let body = response.text().await.unwrap_or_default();
@@ -546,7 +578,7 @@ impl ProxyManager {
 
     /// Sort proxies by latency (fastest first)
     pub fn sort_by_latency(proxies_with_health: &mut [(ProxyConfig, ProxyHealth)]) {
-        proxies_with_health.sort_by(|a, b| a.1.latency_ms.cmp(&b.1.latency_ms));
+        proxies_with_health.sort_by_key(|a| a.1.latency_ms);
     }
 }
 

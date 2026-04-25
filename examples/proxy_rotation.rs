@@ -7,9 +7,9 @@
 //! - Using different rotation strategies (round-robin, random, per-domain)
 //! - Filtering unhealthy proxies
 
-use scrapio_core::proxy::{ProxyConfig, ProxyManager, ProxyRotationConfig, RotationStrategy};
 use scrapio_classic::crawler::CrawlOptions;
 use scrapio_classic::crawler::Crawler;
+use scrapio_core::proxy::{ProxyConfig, ProxyManager, ProxyRotationConfig, RotationStrategy};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,7 +33,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Filter to healthy proxies only
     let healthy_proxies = ProxyManager::filter_healthy(&health_results);
-    println!("{} of {} proxies are healthy", healthy_proxies.len(), proxies.len());
+    println!(
+        "{} of {} proxies are healthy",
+        healthy_proxies.len(),
+        proxies.len()
+    );
 
     // Sort by latency (fastest first)
     let mut sorted_results = health_results.clone();
@@ -55,7 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 2: Create rotation config with different strategies
     println!("\n--- Round Robin Rotation ---");
-    let mut round_robin = ProxyRotationConfig::new(healthy_proxies.clone(), RotationStrategy::RoundRobin);
+    let mut round_robin =
+        ProxyRotationConfig::new(healthy_proxies.clone(), RotationStrategy::RoundRobin);
 
     // Simulate requests
     for i in 0..6 {
@@ -74,9 +79,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\n--- Per-Domain Rotation ---");
-    let mut per_domain = ProxyRotationConfig::new(healthy_proxies.clone(), RotationStrategy::PerDomain);
+    let mut per_domain =
+        ProxyRotationConfig::new(healthy_proxies.clone(), RotationStrategy::PerDomain);
 
-    let domains = vec!["example.com", "test.com", "example.com", "other.com", "example.com"];
+    let domains = [
+        "example.com",
+        "test.com",
+        "example.com",
+        "other.com",
+        "example.com",
+    ];
     for (i, domain) in domains.iter().enumerate() {
         if let Some(proxy) = per_domain.get_proxy(Some(domain)) {
             println!("Request {} ({}): Using proxy {}", i + 1, domain, proxy.url);

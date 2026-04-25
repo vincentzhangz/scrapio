@@ -67,6 +67,27 @@ scrapio ai https://rust-lang.org --browser --prompt "Find and extract all the in
 
 # With custom schema for structured extraction
 scrapio ai https://rust-lang.org --browser --schema '[{"id":"title","description":"Extract page title"}]'
+
+# With custom base URL for OpenAI-compatible providers (e.g., NVIDIA, proxies)
+scrapio ai https://rust-lang.org --provider openai --base-url https://integrate.api.nvidia.com/v1 --api-key nv-xxxxx
+
+# With custom base URL for Anthropic-compatible providers
+scrapio ai https://rust-lang.org --provider anthropic --base-url https://api.anthropic.com/v1
+```
+
+#### Custom Base URLs
+
+You can use OpenAI-compatible or Anthropic-compatible APIs with custom base URLs:
+
+```bash
+# NVIDIA NIM (OpenAI-compatible)
+scrapio ai https://rust-lang.org --provider openai --base-url https://integrate.api.nvidia.com/v1
+
+# Custom proxy
+scrapio ai https://rust-lang.org --provider openai --base-url http://localhost:8080/v1
+
+# Azure OpenAI
+scrapio ai https://rust-lang.org --provider openai --base-url https://your-resource.openai.azure.com/v1
 ```
 
 #### AI Browser Mode
@@ -525,6 +546,8 @@ Options:
   --max-steps <STEPS>     Max steps for browser automation (default: 10)
   --headless <HEADLESS>  Run browser headless (default: true)
   -v, --verbose           Show step-by-step progress during browser automation
+  --base-url <URL>        Custom base URL for the provider
+  --api-key <API_KEY>     API key for the provider (or set via env var)
 ```
 
 ### Crawl Command

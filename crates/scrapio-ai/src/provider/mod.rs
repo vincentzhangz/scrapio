@@ -1,9 +1,15 @@
-//! LLM Provider implementations (clean enum-based abstraction)
+//! LLM Provider implementations using rig-core
+//!
+//! Provides unified interface for OpenAI, Anthropic, OpenRouter, and Ollama.
 
 use scrapio_core::error::{ScrapioError, ScrapioResult};
 
 use crate::config::AiConfig;
 use crate::prompts;
+
+// Import CompletionClient trait for .agent() method
+use rig::client::CompletionClient;
+use rig::completion::Prompt;
 
 /// Provider type enumeration - unified interface for different LLM providers
 #[derive(Debug, Clone)]
@@ -34,7 +40,7 @@ pub fn create_provider(config: &AiConfig) -> LlmProvider {
     }
 }
 
-// OpenAI Provider implementation
+// OpenAI/OpenRouter Provider implementation using rig
 #[derive(Debug, Clone)]
 pub struct OpenAiProvider {
     config: AiConfig,
@@ -48,44 +54,41 @@ impl OpenAiProvider {
     }
 
     pub async fn extract(&self, content: &str, schema: &str) -> ScrapioResult<String> {
-        let system = prompts::extraction_system_prompt();
-        let user = prompts::extraction_user_prompt(content, schema);
-
-        let body = serde_json::json!({
-            "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user}
-            ],
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens
-        });
-
-        let client = reqwest::Client::new();
         let api_key = self.config.api_key.as_deref().ok_or_else(|| {
-            ScrapioError::Ai("OpenAI API key not set. Set OPENAI_API_KEY".to_string())
+            ScrapioError::Ai(
+                "OpenAI API key not set. Set OPENAI_API_KEY or use --api-key".to_string(),
+            )
         })?;
 
-        let response = client
-            .post("https://api.openai.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
+        let base_url = self.config.openai_url.as_deref();
 
-        let text = response["choices"][0]["message"]["content"]
-            .as_str()
-            .ok_or_else(|| ScrapioError::Ai("Invalid response from OpenAI".to_string()))?
-            .to_string();
+        tracing::info!(provider = "openai", base_url = ?base_url, model = %self.config.model, "Connecting to AI service");
 
-        Ok(text)
+        // Build client with optional custom base URL (for OpenRouter, etc.)
+        let openai_client = {
+            let mut builder = rig::providers::openai::Client::builder().api_key(api_key);
+            if let Some(url) = base_url {
+                builder = builder.base_url(url);
+            }
+            builder
+                .build()
+                .map_err(|e| ScrapioError::Ai(format!("Failed to build OpenAI client: {}", e)))?
+        };
+
+        let agent = openai_client.agent(&self.config.model).build();
+
+        let system = prompts::extraction_system_prompt();
+        let user = prompts::extraction_user_prompt(content, schema);
+        let full_prompt = format!("{}\n\n{}", system, user);
+
+        agent
+            .prompt(&full_prompt)
+            .await
+            .map_err(|e| ScrapioError::Ai(e.to_string()))
     }
 }
 
-// Anthropic Provider implementation
+// Anthropic Provider implementation using rig
 #[derive(Debug, Clone)]
 pub struct AnthropicProvider {
     config: AiConfig,
@@ -99,43 +102,33 @@ impl AnthropicProvider {
     }
 
     pub async fn extract(&self, content: &str, schema: &str) -> ScrapioResult<String> {
-        let system = prompts::extraction_system_prompt();
-        let user = prompts::extraction_user_prompt(content, schema);
-
-        let body = serde_json::json!({
-            "model": self.config.model,
-            "messages": [{"role": "user", "content": user}],
-            "system": system,
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens
-        });
-
-        let client = reqwest::Client::new();
         let api_key = self.config.api_key.as_deref().ok_or_else(|| {
-            ScrapioError::Ai("Anthropic API key not set. Set ANTHROPIC_API_KEY".to_string())
+            ScrapioError::Ai(
+                "Anthropic API key not set. Set ANTHROPIC_API_KEY or use --api-key".to_string(),
+            )
         })?;
 
-        let response = client
-            .post("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await?
-            .json::<serde_json::Value>()
-            .await?;
+        tracing::info!(provider = "anthropic", model = %self.config.model, "Connecting to AI service");
 
-        let text = response["content"][0]["text"]
-            .as_str()
-            .ok_or_else(|| ScrapioError::Ai("Invalid response from Anthropic".to_string()))?
-            .to_string();
+        let client = rig::providers::anthropic::Client::builder()
+            .api_key(api_key)
+            .build()
+            .map_err(|e| ScrapioError::Ai(format!("Failed to build Anthropic client: {}", e)))?
+            .agent(&self.config.model)
+            .build();
 
-        Ok(text)
+        let system = prompts::extraction_system_prompt();
+        let user = prompts::extraction_user_prompt(content, schema);
+        let full_prompt = format!("{}\n\n{}", system, user);
+
+        client
+            .prompt(&full_prompt)
+            .await
+            .map_err(|e| ScrapioError::Ai(e.to_string()))
     }
 }
 
-// Ollama Provider implementation
+// Ollama Provider implementation using rig
 #[derive(Debug, Clone)]
 pub struct OllamaProvider {
     config: AiConfig,
@@ -148,66 +141,38 @@ impl OllamaProvider {
         }
     }
 
-    fn get_model(&self) -> &str {
+    fn get_model(&self) -> String {
         match self.config.model.as_str() {
-            "gpt-4o" | "gpt-4" | "claude-3" | "" => "llama3",
-            m => m,
+            "gpt-4o" | "gpt-4" | "claude-3" | "" => "llama3".to_string(),
+            m => m.to_string(),
         }
     }
 
     pub async fn extract(&self, content: &str, schema: &str) -> ScrapioResult<String> {
-        let url = format!(
-            "{}/api/generate",
-            self.config
-                .ollama_url
-                .as_deref()
-                .unwrap_or("http://localhost:11434")
-        );
+        let base_url = self
+            .config
+            .ollama_url
+            .as_deref()
+            .unwrap_or("http://localhost:11434");
 
-        let prompt = format!(
-            "{}\n\n{}",
-            prompts::extraction_system_prompt(),
-            prompts::extraction_user_prompt(content, schema)
-        );
+        tracing::info!(provider = "ollama", base_url = %base_url, model = %self.get_model(), "Connecting to AI service");
 
-        let body = serde_json::json!({
-            "model": self.get_model(),
-            "prompt": prompt,
-            "stream": false,
-            "options": {
-                "temperature": self.config.temperature,
-                "num_predict": self.config.max_tokens
-            }
-        });
+        // Ollama doesn't need an API key, use Nothing
+        let ollama_client = rig::providers::ollama::Client::builder()
+            .base_url(base_url)
+            .api_key(rig::client::Nothing)
+            .build()
+            .map_err(|e| ScrapioError::Ai(format!("Failed to build Ollama client: {}", e)))?
+            .agent(self.get_model())
+            .build();
 
-        let client = reqwest::Client::new();
-        let response = client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
+        let system = prompts::extraction_system_prompt();
+        let user = prompts::extraction_user_prompt(content, schema);
+        let full_prompt = format!("{}\n\n{}", system, user);
+
+        ollama_client
+            .prompt(&full_prompt)
             .await
-            .map_err(|e| ScrapioError::Ai(format!("Connection error: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(ScrapioError::Ai(format!(
-                "Ollama error {}: {}",
-                status, text
-            )));
-        }
-
-        let value: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| ScrapioError::Ai(format!("Parse error: {}", e)))?;
-
-        let text = value["response"]
-            .as_str()
-            .ok_or_else(|| ScrapioError::Ai("Invalid response from Ollama".to_string()))?
-            .to_string();
-
-        Ok(text)
+            .map_err(|e| ScrapioError::Ai(e.to_string()))
     }
 }

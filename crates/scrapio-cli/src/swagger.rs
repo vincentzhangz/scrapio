@@ -73,6 +73,7 @@ pub struct ResultItem {
 }
 
 /// Extract data from a classic scrape response as owned, Send-safe types.
+#[allow(clippy::type_complexity)]
 #[instrument(skip(url), fields(url))]
 pub async fn classic_scrape_data(
     url: &str,
@@ -213,7 +214,7 @@ pub async fn scrape(
             &payload.prompt
         };
         match scraper
-            .scrape_with_managed_browser(&payload.url, schema, prompt, None, true)
+            .scrape_with_managed_browser(&payload.url, schema, prompt, None, None, true)
             .await
         {
             Ok(result) => {

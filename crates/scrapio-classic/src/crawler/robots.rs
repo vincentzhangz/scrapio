@@ -263,7 +263,7 @@ fn parse_robots_txt(content: &str) -> Result<ParsedRobots, RobotsError> {
     }
 
     // Sort allowed patterns by length (longer = more specific first)
-    allowed.sort_by(|a, b| b.pattern.len().cmp(&a.pattern.len()));
+    allowed.sort_by_key(|a| std::cmp::Reverse(a.pattern.len()));
 
     Ok(ParsedRobots {
         allowed,

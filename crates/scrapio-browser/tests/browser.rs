@@ -50,7 +50,6 @@ async fn test_browser_creation() {
 
     // Just verify browser can be created - need to init to connect
     let _ = browser.init().await;
-    assert!(true);
 }
 
 /// Test navigation to a data URL (self-contained, no network required)

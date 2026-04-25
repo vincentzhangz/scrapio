@@ -73,8 +73,13 @@ pub struct RalphLoopOptions<'a> {
     pub max_steps_per_iteration: Option<usize>,
     pub stealth_level: Option<StealthLevel>,
     pub webdriver_url: Option<String>,
+    pub browser_version: Option<String>,
     pub headless: bool,
     pub verbose: bool,
+    /// Maximum characters of stripped HTML text to send to AI (None = no limit)
+    pub text_limit: Option<usize>,
+    /// Characters to skip from the beginning of stripped HTML (None = 0)
+    pub text_offset: Option<usize>,
 }
 
 impl<'a> Default for RalphLoopOptions<'a> {
@@ -87,8 +92,11 @@ impl<'a> Default for RalphLoopOptions<'a> {
             max_steps_per_iteration: None,
             stealth_level: None,
             webdriver_url: None,
+            browser_version: None,
             headless: true,
             verbose: false,
+            text_limit: None,
+            text_offset: None,
         }
     }
 }
@@ -448,11 +456,19 @@ impl BrowserAiScraper {
         &self,
         options: RalphLoopOptions<'_>,
     ) -> Result<RalphResult, ScrapioError> {
-        use scrapio_browser::{ChromeDriverSession, StealthBrowser};
+        use scrapio_browser::{ChromeDriverManager, ChromeDriverSession, StealthBrowser};
 
-        let driver = ChromeDriverSession::start()
-            .await
-            .map_err(|e| ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e)))?;
+        let driver = if let Some(ref version) = options.browser_version {
+            ChromeDriverSession::start_with(ChromeDriverManager::new().with_version(version))
+                .await
+                .map_err(|e| {
+                    ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
+                })?
+        } else {
+            ChromeDriverSession::start().await.map_err(|e| {
+                ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
+            })?
+        };
 
         let webdriver_url = driver.webdriver_url();
 
@@ -713,6 +729,9 @@ impl BrowserAiScraper {
                         "execute_script({})",
                         script.chars().take(30).collect::<String>()
                     ),
+                    BrowserAction::SetTextSlice { limit, offset } => {
+                        format!("set_text_slice(limit={:?}, offset={:?})", limit, offset)
+                    }
                 };
                 println!("  → Step {}: {}", step, action_desc);
             }

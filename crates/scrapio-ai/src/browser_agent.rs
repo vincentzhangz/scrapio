@@ -67,6 +67,11 @@ pub enum BrowserAction {
     FindElements { selector: String },
     /// Execute custom JavaScript
     ExecuteScript { script: String },
+    /// Set text limit/offset for the AI context window (dynamic control)
+    SetTextSlice {
+        limit: Option<usize>,
+        offset: Option<usize>,
+    },
 }
 
 impl BrowserAction {
@@ -114,6 +119,9 @@ impl BrowserAction {
                     script.clone()
                 };
                 format!("execute_script: {}", preview)
+            }
+            BrowserAction::SetTextSlice { limit, offset } => {
+                format!("set_text_slice: limit={:?}, offset={:?}", limit, offset)
             }
         }
     }
@@ -195,13 +203,31 @@ pub struct PageSnapshot {
 }
 
 impl PageSnapshot {
-    pub fn from_html(url: &str, title: &str, html: &str, failures: &[ActionFailure]) -> Self {
+    pub fn from_html(
+        url: &str,
+        title: &str,
+        html: &str,
+        failures: &[ActionFailure],
+        text_limit: Option<usize>,
+        text_offset: Option<usize>,
+    ) -> Self {
         // Extract interactable elements from HTML
         let elements = extract_interactable_elements(html);
 
-        // Create a text summary (first 3000 chars of stripped HTML)
+        // Create a text summary with optional limit/offset
         let text_summary = ext::strip_html(html);
-        let visible_text_summary = text_summary.chars().take(3000).collect();
+        let visible_text_summary = if let Some(offset) = text_offset {
+            let text_summary = text_summary.chars().skip(offset).collect::<String>();
+            if let Some(limit) = text_limit {
+                text_summary.chars().take(limit).collect()
+            } else {
+                text_summary
+            }
+        } else if let Some(limit) = text_limit {
+            text_summary.chars().take(limit).collect()
+        } else {
+            text_summary.chars().take(3000).collect()
+        };
 
         Self {
             url: url.to_string(),
@@ -340,6 +366,10 @@ pub struct AgentState {
     pub failures: Vec<ActionFailure>,
     pub last_action: Option<String>,
     pub consecutive_failures: usize,
+    /// Dynamic text limit override (None = use config default)
+    pub text_limit: Option<usize>,
+    /// Dynamic text offset override (None = use config default)
+    pub text_offset: Option<usize>,
 }
 
 impl AgentState {
@@ -353,6 +383,8 @@ impl AgentState {
             failures: Vec::new(),
             last_action: None,
             consecutive_failures: 0,
+            text_limit: None,
+            text_offset: None,
         }
     }
 
@@ -445,10 +477,17 @@ impl BrowserAiScraper {
         schema: &str,
         prompt: &str,
         driver_path: Option<&str>,
+        browser_version: Option<&str>,
         headless: bool,
     ) -> Result<super::AiExtractionResult, ScrapioError> {
         let driver = if let Some(path) = driver_path {
             ChromeDriverSession::start_with(ChromeDriverManager::new().with_path(path.into()))
+                .await
+                .map_err(|e| {
+                    ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
+                })?
+        } else if let Some(version) = browser_version {
+            ChromeDriverSession::start_with(ChromeDriverManager::new().with_version(version))
                 .await
                 .map_err(|e| {
                     ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
@@ -694,10 +733,23 @@ impl BrowserAiScraper {
             }
         };
 
-        // Get visible text for context
+        // Get visible text for context with dynamic limit/offset (state overrides config)
         let html = browser.html().await.unwrap_or_default();
         let text_summary = ext::strip_html(&html);
-        let visible_text_summary = text_summary.chars().take(3000).collect();
+        let effective_limit = state.text_limit.or(self.config.text_limit);
+        let effective_offset = state.text_offset.or(self.config.text_offset);
+        let visible_text_summary = if let Some(offset) = effective_offset {
+            let text_summary = text_summary.chars().skip(offset).collect::<String>();
+            if let Some(limit) = effective_limit {
+                text_summary.chars().take(limit).collect()
+            } else {
+                text_summary
+            }
+        } else if let Some(limit) = effective_limit {
+            text_summary.chars().take(limit).collect()
+        } else {
+            text_summary.chars().take(3000).collect()
+        };
 
         Ok(PageSnapshot {
             url,
@@ -845,16 +897,12 @@ impl BrowserAiScraper {
                     return Some("Cannot type empty text".to_string());
                 }
             }
-            BrowserAction::Wait { duration_ms } => {
-                if *duration_ms > 30000 {
-                    return Some("Wait duration exceeds maximum of 30 seconds".to_string());
-                }
+            BrowserAction::Wait { duration_ms } if *duration_ms > 30000 => {
+                return Some("Wait duration exceeds maximum of 30 seconds".to_string());
             }
-            BrowserAction::Goto { url } => {
+            BrowserAction::Goto { url } if url == &snapshot.url && action_history.len() > 1 => {
                 // Check for same-page navigation without reason
-                if url == &snapshot.url && action_history.len() > 1 {
-                    return Some("Redundant navigation to current page".to_string());
-                }
+                return Some("Redundant navigation to current page".to_string());
             }
             _ => {}
         }
@@ -929,6 +977,7 @@ Valid actions (use these exact JSON formats - prefer ClickElement over Click):
 {{"type": "extract"}} - final extraction and stop
 {{"type": "finish"}} - finish and return current state
 {{"type": "screenshot"}}
+{{"type": "set_text_slice", "limit": 5000, "offset": 0}} - adjust visible text window (limit chars, skip offset chars)
 
 Decide what to do next and respond with ONLY the JSON object."#,
             custom_instruction,
@@ -1184,6 +1233,18 @@ Now extract the data:[/INST]"#,
                 Ok(ActionResult::Success {
                     data: Some(result),
                     message: Some("Script executed".to_string()),
+                })
+            }
+
+            BrowserAction::SetTextSlice { limit, offset } => {
+                state.text_limit = *limit;
+                state.text_offset = *offset;
+                Ok(ActionResult::Success {
+                    data: Some(serde_json::json!({ "text_limit": limit, "text_offset": offset })),
+                    message: Some(format!(
+                        "Text slice updated: limit={:?}, offset={:?}",
+                        limit, offset
+                    )),
                 })
             }
         }
