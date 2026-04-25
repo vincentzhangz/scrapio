@@ -8,8 +8,8 @@
 //! - Handling proxy failures gracefully
 //! - Tracking proxy usage per domain
 
-use scrapio_core::proxy::{ProxyConfig, RotationStrategy};
 use scrapio_classic::crawler::{CrawlOptions, Crawler};
+use scrapio_core::proxy::{ProxyConfig, RotationStrategy};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,11 +53,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== Load Proxies from File ===");
 
     // Create a sample proxy file for demonstration
-    std::fs::write("proxies.txt", "# Proxy list\nhttp://proxy1.example.com:8080\nhttp://proxy2.example.com:8080\nhttp://proxy3.example.com:8080\n")?;
+    std::fs::write(
+        "proxies.txt",
+        "# Proxy list\nhttp://proxy1.example.com:8080\nhttp://proxy2.example.com:8080\nhttp://proxy3.example.com:8080\n",
+    )?;
 
-    let mut options = CrawlOptions::new()
-        .with_max_depth(2)
-        .with_max_pages(10);
+    let mut options = CrawlOptions::new().with_max_depth(2).with_max_pages(10);
 
     match options.with_proxy_list_file("proxies.txt", RotationStrategy::Random) {
         Ok(_) => {

@@ -116,8 +116,7 @@ impl SpiderRunner {
         strategy: scrapio_core::proxy::RotationStrategy,
     ) -> Self {
         self.proxy_rotation = Some(std::sync::Mutex::new(ProxyRotationConfig::new(
-            proxies,
-            strategy,
+            proxies, strategy,
         )));
         self
     }

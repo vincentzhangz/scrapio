@@ -68,7 +68,10 @@ pub enum BrowserAction {
     /// Execute custom JavaScript
     ExecuteScript { script: String },
     /// Set text limit/offset for the AI context window (dynamic control)
-    SetTextSlice { limit: Option<usize>, offset: Option<usize> },
+    SetTextSlice {
+        limit: Option<usize>,
+        offset: Option<usize>,
+    },
 }
 
 impl BrowserAction {
@@ -484,13 +487,11 @@ impl BrowserAiScraper {
                     ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
                 })?
         } else if let Some(version) = browser_version {
-            ChromeDriverSession::start_with(
-                ChromeDriverManager::new().with_version(version),
-            )
-            .await
-            .map_err(|e| {
-                ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
-            })?
+            ChromeDriverSession::start_with(ChromeDriverManager::new().with_version(version))
+                .await
+                .map_err(|e| {
+                    ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
+                })?
         } else {
             ChromeDriverSession::start().await.map_err(|e| {
                 ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
@@ -1240,7 +1241,10 @@ Now extract the data:[/INST]"#,
                 state.text_offset = *offset;
                 Ok(ActionResult::Success {
                     data: Some(serde_json::json!({ "text_limit": limit, "text_offset": offset })),
-                    message: Some(format!("Text slice updated: limit={:?}, offset={:?}", limit, offset)),
+                    message: Some(format!(
+                        "Text slice updated: limit={:?}, offset={:?}",
+                        limit, offset
+                    )),
                 })
             }
         }

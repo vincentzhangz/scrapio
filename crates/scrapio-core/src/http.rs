@@ -115,8 +115,7 @@ impl HttpClient {
     }
 
     pub fn with_config(config: HttpClientConfig) -> Result<Self, crate::error::ScrapioError> {
-        let mut builder = Client::builder()
-            .timeout(config.timeout);
+        let mut builder = Client::builder().timeout(config.timeout);
 
         // Add user agent
         if let Some(ua) = config.user_agent {
@@ -125,24 +124,25 @@ impl HttpClient {
 
         // Add proxy if configured
         if let Some(proxy) = config.proxy {
-            let proxy_url = if let (Some(username), Some(password)) = (&proxy.username, &proxy.password) {
-                // Inject credentials into URL for reqwest
-                format!("{}{}:{}@", proxy.url, username, password)
-            } else {
-                proxy.url.clone()
-            };
+            let proxy_url =
+                if let (Some(username), Some(password)) = (&proxy.username, &proxy.password) {
+                    // Inject credentials into URL for reqwest
+                    format!("{}{}:{}@", proxy.url, username, password)
+                } else {
+                    proxy.url.clone()
+                };
 
             // reqwest::Proxy::http/https returns Result<Proxy, Error>
             // Try http first, fall back to https if it fails
-            let reqwest_proxy = reqwest::Proxy::http(&proxy_url)
-                .or_else(|_| reqwest::Proxy::https(&proxy_url))?;
+            let reqwest_proxy =
+                reqwest::Proxy::http(&proxy_url).or_else(|_| reqwest::Proxy::https(&proxy_url))?;
 
             builder = builder.proxy(reqwest_proxy);
         }
 
-        let client = builder
-            .build()
-            .map_err(|e| crate::error::ScrapioError::Http(format!("Failed to create HTTP client: {}", e)))?;
+        let client = builder.build().map_err(|e| {
+            crate::error::ScrapioError::Http(format!("Failed to create HTTP client: {}", e))
+        })?;
 
         Ok(Self { client })
     }

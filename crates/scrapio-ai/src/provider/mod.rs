@@ -55,7 +55,9 @@ impl OpenAiProvider {
 
     pub async fn extract(&self, content: &str, schema: &str) -> ScrapioResult<String> {
         let api_key = self.config.api_key.as_deref().ok_or_else(|| {
-            ScrapioError::Ai("OpenAI API key not set. Set OPENAI_API_KEY or use --api-key".to_string())
+            ScrapioError::Ai(
+                "OpenAI API key not set. Set OPENAI_API_KEY or use --api-key".to_string(),
+            )
         })?;
 
         let base_url = self.config.openai_url.as_deref();
@@ -68,7 +70,9 @@ impl OpenAiProvider {
             if let Some(url) = base_url {
                 builder = builder.base_url(url);
             }
-            builder.build().map_err(|e| ScrapioError::Ai(format!("Failed to build OpenAI client: {}", e)))?
+            builder
+                .build()
+                .map_err(|e| ScrapioError::Ai(format!("Failed to build OpenAI client: {}", e)))?
         };
 
         let agent = openai_client.agent(&self.config.model).build();
@@ -77,7 +81,8 @@ impl OpenAiProvider {
         let user = prompts::extraction_user_prompt(content, schema);
         let full_prompt = format!("{}\n\n{}", system, user);
 
-        agent.prompt(&full_prompt)
+        agent
+            .prompt(&full_prompt)
             .await
             .map_err(|e| ScrapioError::Ai(e.to_string()))
     }
@@ -98,7 +103,9 @@ impl AnthropicProvider {
 
     pub async fn extract(&self, content: &str, schema: &str) -> ScrapioResult<String> {
         let api_key = self.config.api_key.as_deref().ok_or_else(|| {
-            ScrapioError::Ai("Anthropic API key not set. Set ANTHROPIC_API_KEY or use --api-key".to_string())
+            ScrapioError::Ai(
+                "Anthropic API key not set. Set ANTHROPIC_API_KEY or use --api-key".to_string(),
+            )
         })?;
 
         tracing::info!(provider = "anthropic", model = %self.config.model, "Connecting to AI service");
@@ -114,7 +121,8 @@ impl AnthropicProvider {
         let user = prompts::extraction_user_prompt(content, schema);
         let full_prompt = format!("{}\n\n{}", system, user);
 
-        client.prompt(&full_prompt)
+        client
+            .prompt(&full_prompt)
             .await
             .map_err(|e| ScrapioError::Ai(e.to_string()))
     }
@@ -162,7 +170,8 @@ impl OllamaProvider {
         let user = prompts::extraction_user_prompt(content, schema);
         let full_prompt = format!("{}\n\n{}", system, user);
 
-        ollama_client.prompt(&full_prompt)
+        ollama_client
+            .prompt(&full_prompt)
             .await
             .map_err(|e| ScrapioError::Ai(e.to_string()))
     }

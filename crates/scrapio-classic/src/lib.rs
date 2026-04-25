@@ -29,9 +29,7 @@ impl Scraper {
 
     /// Create a new scraper with a custom HTTP client configuration
     pub fn with_proxy(proxy: ProxyConfig) -> Result<Self, ScrapioError> {
-        let http = HttpClient::builder()
-            .proxy(proxy)
-            .build()?;
+        let http = HttpClient::builder().proxy(proxy).build()?;
         Ok(Self { http })
     }
 

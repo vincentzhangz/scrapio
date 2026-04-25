@@ -461,11 +461,13 @@ impl BrowserAiScraper {
         let driver = if let Some(ref version) = options.browser_version {
             ChromeDriverSession::start_with(ChromeDriverManager::new().with_version(version))
                 .await
-                .map_err(|e| ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e)))?
+                .map_err(|e| {
+                    ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
+                })?
         } else {
-            ChromeDriverSession::start()
-                .await
-                .map_err(|e| ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e)))?
+            ChromeDriverSession::start().await.map_err(|e| {
+                ScrapioError::Browser(format!("Failed to start ChromeDriver: {}", e))
+            })?
         };
 
         let webdriver_url = driver.webdriver_url();
