@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n--- Per-Domain Rotation ---");
     let mut per_domain = ProxyRotationConfig::new(healthy_proxies.clone(), RotationStrategy::PerDomain);
 
-    let domains = vec!["example.com", "test.com", "example.com", "other.com", "example.com"];
+    let domains = ["example.com", "test.com", "example.com", "other.com", "example.com"];
     for (i, domain) in domains.iter().enumerate() {
         if let Some(proxy) = per_domain.get_proxy(Some(domain)) {
             println!("Request {} ({}): Using proxy {}", i + 1, domain, proxy.url);

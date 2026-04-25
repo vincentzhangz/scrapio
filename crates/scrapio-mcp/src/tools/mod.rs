@@ -201,8 +201,8 @@ pub async fn classic_scrape_impl(
         .await
         .map_err(|e| ScrapioMcpError::ScrapingFailed(e.to_string()))?;
 
-    /// CRITICAL: Extract all data before any await point.
-    /// Response contains Cell<usize> which is not Send.
+    // CRITICAL: Extract all data before any await point.
+    // Response contains Cell<usize> which is not Send.
     let url = resp.url.clone();
     let status = resp.status;
     let title = resp.title();
@@ -362,8 +362,8 @@ pub async fn storage_save_impl(
             .await
             .map_err(|e| ScrapioMcpError::ScrapingFailed(e.to_string()))?;
 
-        /// CRITICAL: Extract all data before any await point.
-        /// Response contains Cell<usize> which is not Send.
+        // CRITICAL: Extract all data before any await point.
+        // Response contains Cell<usize> which is not Send.
         (resp.status, resp.title(), resp.links())
     };
 
@@ -385,7 +385,7 @@ pub async fn storage_get_impl(
         .await
         .map_err(|e| ScrapioMcpError::StorageFailed(e.to_string()))?;
 
-    /// Use get_result_by_id since input.id is i64
+    // Use get_result_by_id since input.id is i64
     let result = storage
         .get_result_by_id(input.id)
         .await

@@ -80,7 +80,7 @@ impl Crawler {
         // Initialize scraper with proxy configuration
         let scraper = if let Some(ref proxy) = options.proxy {
             crate::Scraper::with_proxy(proxy.clone())
-                .map_err(|e| CrawlerError::HttpError(e))?
+                .map_err(CrawlerError::HttpError)?
         } else {
             crate::Scraper::new()
         };

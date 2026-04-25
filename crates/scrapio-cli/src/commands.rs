@@ -70,6 +70,9 @@ pub struct AiScrapeOptions {
     pub verbose: bool,
     pub output: String,
     pub output_file: Option<String>,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+    pub browser_version: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -85,6 +88,7 @@ fn parse_stealth_level(stealth: Option<&str>) -> scrapio_browser::StealthLevel {
 async fn start_driver(
     driver_path: Option<&str>,
     browser_type: scrapio_browser::BrowserType,
+    browser_version: Option<&str>,
 ) -> Option<scrapio_browser::WebDriverSession> {
     let mut manager = scrapio_browser::DriverManager::with_driver_type(
         scrapio_browser::DriverType::parse(&browser_type.to_string())
@@ -93,6 +97,10 @@ async fn start_driver(
 
     if let Some(path) = driver_path {
         manager = manager.with_path(path.into());
+    }
+
+    if let Some(version) = browser_version {
+        manager = manager.with_version(version);
     }
 
     let result = scrapio_browser::WebDriverSession::start_with(manager).await;
@@ -146,6 +154,9 @@ pub fn handle_ai(
     verbose: bool,
     output: &str,
     output_file: Option<&str>,
+    base_url: Option<&str>,
+    api_key: Option<&str>,
+    browser_version: Option<&str>,
 ) {
     info!(
         "Starting AI scraping with provider={}, browser={}",
@@ -163,6 +174,9 @@ pub fn handle_ai(
         verbose,
         output: output.to_string(),
         output_file: output_file.map(|s| s.to_string()),
+        base_url: base_url.map(|s| s.to_string()),
+        api_key: api_key.map(|s| s.to_string()),
+        browser_version: browser_version.map(|s| s.to_string()),
     };
 
     if options.use_browser {
@@ -175,10 +189,13 @@ pub fn handle_ai(
             &options.model,
             &options.output,
             options.output_file.as_deref(),
+            options.base_url.as_deref(),
+            options.api_key.as_deref(),
         );
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[instrument(skip(schema), fields(url, provider, model))]
 fn handle_ai_http(
     url: &str,
@@ -187,12 +204,25 @@ fn handle_ai_http(
     model: &str,
     output: &str,
     output_file: Option<&str>,
+    base_url: Option<&str>,
+    api_key: Option<&str>,
 ) {
     run_async(async {
         info!("Starting AI HTTP scraping");
         let mut config = scrapio_ai::AiConfig::new().with_provider(provider);
         if !model.is_empty() {
             config = config.with_model(model);
+        }
+        if let Some(key) = api_key {
+            config = config.with_api_key(key);
+        }
+        if let Some(url) = base_url {
+            match provider {
+                "openai" => config = config.with_openai_url(url),
+                "anthropic" => config = config.with_anthropic_url(url),
+                "ollama" => config = config.with_ollama_url(url),
+                _ => {}
+            }
         }
         let scraper = scrapio_ai::AiScraper::with_config(config);
         let schema = schema.unwrap_or_else(|| "{}".to_string());
@@ -253,6 +283,17 @@ fn handle_ai_browser(options: AiScrapeOptions) {
         if !options.model.is_empty() {
             config = config.with_model(&options.model);
         }
+        if let Some(ref key) = options.api_key {
+            config = config.with_api_key(key);
+        }
+        if let Some(ref url) = options.base_url {
+            match options.provider.as_str() {
+                "openai" => config = config.with_openai_url(url),
+                "anthropic" => config = config.with_anthropic_url(url),
+                "ollama" => config = config.with_ollama_url(url),
+                _ => {}
+            }
+        }
 
         let scraper =
             scrapio_ai::BrowserAiScraper::with_config(config).with_max_steps(options.max_steps);
@@ -265,8 +306,11 @@ fn handle_ai_browser(options: AiScrapeOptions) {
             max_steps_per_iteration: Some(options.max_steps),
             stealth_level: Some(scrapio_browser::StealthLevel::Basic),
             webdriver_url: None,
+            browser_version: options.browser_version.clone(),
             headless: options.headless,
             verbose: options.verbose,
+            text_limit: None,
+            text_offset: None,
         };
 
         match scraper.ralph_loop(ralph_options).await {
@@ -427,7 +471,7 @@ pub fn handle_crawl(
         };
 
         // Parse rotation strategy
-        let rotation_strategy = ProxyRotationStrategy::from_str(proxy_rotation);
+        let rotation_strategy = ProxyRotationStrategy::parse_str(proxy_rotation);
 
         // Build options
         let mut options = CrawlOptions::new()
@@ -725,6 +769,7 @@ pub fn handle_list(database: &str, limit: usize, output: &str) {
 }
 
 #[instrument(fields(url, browser))]
+#[allow(clippy::too_many_arguments)]
 pub fn handle_browser(
     url: &str,
     headless: bool,
@@ -733,6 +778,7 @@ pub fn handle_browser(
     driver_path: Option<&str>,
     browser: &str,
     proxy: Option<&str>,
+    browser_version: Option<&str>,
 ) {
     info!(
         "Starting browser session: browser={}, headless={}",
@@ -744,13 +790,13 @@ pub fn handle_browser(
     run_async(async {
         let stealth_level = parse_stealth_level(stealth);
 
-        let driver = match start_driver(driver_path, browser_type).await {
+        let driver = match start_driver(driver_path, browser_type, browser_version).await {
             Some(d) => d,
             None => return,
         };
 
         let mut browser_builder = scrapio_browser::StealthBrowser::with_webdriver_and_type(
-            &driver.webdriver_url(),
+            driver.webdriver_url(),
             browser_type,
         )
         .headless(headless);

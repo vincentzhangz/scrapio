@@ -95,12 +95,11 @@ impl ProxyConfig {
 
     /// Get proxy host and port
     pub fn host_port(&self) -> Option<(String, u16)> {
-        if let Ok(parsed) = url::Url::parse(&self.url) {
-            if let Some(host) = parsed.host_str() {
-                if let Some(port) = parsed.port() {
-                    return Some((host.to_string(), port));
-                }
-            }
+        if let Ok(parsed) = url::Url::parse(&self.url)
+            && let Some(host) = parsed.host_str()
+            && let Some(port) = parsed.port()
+        {
+            return Some((host.to_string(), port));
         }
         None
     }
@@ -153,7 +152,7 @@ pub enum RotationStrategy {
 }
 
 impl RotationStrategy {
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "roundrobin" | "round-robin" => RotationStrategy::RoundRobin,
             "random" => RotationStrategy::Random,
@@ -546,7 +545,7 @@ impl ProxyManager {
 
     /// Sort proxies by latency (fastest first)
     pub fn sort_by_latency(proxies_with_health: &mut [(ProxyConfig, ProxyHealth)]) {
-        proxies_with_health.sort_by(|a, b| a.1.latency_ms.cmp(&b.1.latency_ms));
+        proxies_with_health.sort_by_key(|a| a.1.latency_ms);
     }
 }
 

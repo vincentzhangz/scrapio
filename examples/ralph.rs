@@ -33,8 +33,11 @@ async fn main() {
         max_steps_per_iteration: Some(10),
         stealth_level: Some(StealthLevel::Basic),
         webdriver_url: None,
+        browser_version: None,
         headless: true,
         verbose: false,
+        text_limit: None,
+        text_offset: None,
     };
 
     println!("Starting Ralph loop...");

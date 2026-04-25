@@ -201,10 +201,10 @@ impl BrowserCapabilities for FirefoxCapabilities {
         }
 
         // Add proxy if configured
-        if let Some(ref proxy) = config.proxy {
-            if let Some((host, port)) = proxy.host_port() {
-                args.push(Value::String(format!("--proxy={}:{}", host, port)));
-            }
+        if let Some(ref proxy) = config.proxy
+            && let Some((host, port)) = proxy.host_port()
+        {
+            args.push(Value::String(format!("--proxy={}:{}", host, port)));
         }
 
         // Add window size if specified

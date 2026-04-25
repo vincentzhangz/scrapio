@@ -53,6 +53,15 @@ enum Commands {
         output: String,
         #[arg(long)]
         output_file: Option<String>,
+        /// Custom base URL for the provider
+        #[arg(long)]
+        base_url: Option<String>,
+        /// API key for the provider
+        #[arg(long)]
+        api_key: Option<String>,
+        /// Browser version (for --browser mode, auto-downloads matching driver)
+        #[arg(long)]
+        browser_version: Option<String>,
     },
     Crawl {
         url: String,
@@ -130,6 +139,9 @@ enum Commands {
         /// Proxy URL (e.g., http://user:pass@proxy:8080)
         #[arg(long)]
         proxy: Option<String>,
+        /// Browser version (auto-downloads matching driver)
+        #[arg(long)]
+        browser_version: Option<String>,
     },
     /// Start the MCP server for AI client integration
     Mcp {
@@ -165,6 +177,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             verbose,
             output,
             output_file,
+            base_url,
+            api_key,
+            browser_version,
         } => {
             commands::handle_ai(
                 &url,
@@ -179,6 +194,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 verbose,
                 &output,
                 output_file.as_deref(),
+                base_url.as_deref(),
+                api_key.as_deref(),
+                browser_version.as_deref(),
             );
         }
         Commands::Crawl {
@@ -242,6 +260,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             driver_path,
             browser,
             proxy,
+            browser_version,
         } => {
             commands::handle_browser(
                 &url,
@@ -251,6 +270,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 driver_path.as_deref(),
                 &browser,
                 proxy.as_deref(),
+                browser_version.as_deref(),
             );
         }
         Commands::Mcp { http, host, port } => {
